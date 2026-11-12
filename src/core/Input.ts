@@ -41,6 +41,14 @@ function hasShortcutModifier(event: KeyboardEvent): boolean {
   return event.ctrlKey || event.metaKey || event.altKey;
 }
 
+const UI_SELECTOR = 'input,select,textarea,button,summary,[contenteditable]:not([contenteditable=false])';
+
+/** True when the event comes from a UI control. Duck-typed: Window targets and Node tests have no Element. */
+function isUiTarget(event: Event): boolean {
+  const target = event.target as { closest?: (selector: string) => unknown } | null;
+  return typeof target?.closest === 'function' && target.closest(UI_SELECTOR) != null;
+}
+
 export class Input {
   private readonly target: InputEventTarget;
   private readonly held = new Set<HeldCode>();
@@ -52,6 +60,7 @@ export class Input {
     target.addEventListener('keydown', this.onKeyDown);
     target.addEventListener('keyup', this.onKeyUp);
     target.addEventListener('blur', this.onBlur);
+    target.addEventListener('focusin', this.onFocusIn);
   }
 
   isHeld(code: HeldCode): boolean {
@@ -81,6 +90,12 @@ export class Input {
     this.target.removeEventListener('keydown', this.onKeyDown);
     this.target.removeEventListener('keyup', this.onKeyUp);
     this.target.removeEventListener('blur', this.onBlur);
+    this.target.removeEventListener('focusin', this.onFocusIn);
+    this.clearAll();
+  }
+
+  /** Drops every keyboard hold, every touch hold and any pending reset. */
+  clearAll(): void {
     this.clear();
     this.touchHeld.clear();
   }
@@ -92,6 +107,7 @@ export class Input {
 
   private readonly onKeyDown = (event: Event): void => {
     const e = event as KeyboardEvent;
+    if (isUiTarget(e)) return; // The key belongs to a UI control; keep its default.
     if (hasShortcutModifier(e)) {
       this.clear(); // A browser shortcut may prevent the matching keyup.
       return;
@@ -116,10 +132,15 @@ export class Input {
     } else if (e.code !== RESET_CODE) {
       return;
     }
-    if (!hasShortcutModifier(e)) e.preventDefault();
+    if (!hasShortcutModifier(e) && !isUiTarget(e)) e.preventDefault();
   };
 
   private readonly onBlur = (): void => {
     this.clear();
+  };
+
+  /** Focus moving onto a UI control ends keyboard holds: their keyups now belong to it. */
+  private readonly onFocusIn = (event: Event): void => {
+    if (isUiTarget(event)) this.held.clear();
   };
 }

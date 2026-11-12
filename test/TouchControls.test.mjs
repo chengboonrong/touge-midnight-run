@@ -285,3 +285,16 @@ test('dispose releases holds, removes the controls and detaches the listeners', 
   h.root.dispatchEvent(menu);
   assert.equal(menu.defaultPrevented, false);
 });
+
+test('menu clear drops tracked fingers so stale releases cannot cancel a new hold', () => {
+  const h=harness();h.down('GAS',1);h.down('GAS',2);h.touch.clear();
+  assert.deepEqual(h.held(),[]);assert.deepEqual(h.pressed(),[]);
+  h.down('GAS',3);h.up('GAS',1);h.up('GAS',2);
+  assert.deepEqual(h.held(),['KeyW']);h.up('GAS',3);assert.deepEqual(h.held(),[]);
+});
+test('disabled menu controls release and reject new pointer holds until enabled', () => {
+  const h=harness();h.down('LEFT',1);h.touch.setDisabled(true);
+  assert.deepEqual(h.held(),[]);assert.deepEqual(h.pressed(),[]);
+  h.down('GAS',2);h.down('RESET',3);assert.deepEqual(h.held(),[]);assert.equal(h.input.consumeReset(),false);
+  h.touch.setDisabled(false);h.down('GAS',4);assert.deepEqual(h.held(),['KeyW']);
+});

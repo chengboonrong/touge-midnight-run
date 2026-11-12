@@ -102,3 +102,20 @@ body[data-touch] .speedometer { bottom: calc(var(--touch-edge) + 132px); }
   body[data-touch] .speedometer { top: 18px; right: calc(50% - 60px); bottom: auto; min-width: 120px; }
 }
 @media (prefers-reduced-motion: reduce) { .controls, .speedometer__rev { transition: none; } }
+/* Options: a 48px summary under the title; open, it becomes a scrollable paused overlay above the touch buttons. */
+.options { position: fixed; z-index: 4; top: 84px; left: max(38px, env(safe-area-inset-left)); }
+.options[open] { top: 0; left: 0; right: 0; bottom: 0; overflow: auto; background: var(--touch-fill);
+  padding: 84px 38px 24px max(38px, env(safe-area-inset-left)); }
+.options summary { display: flex; align-items: center; width: max-content; min-width: 48px; min-height: 48px; padding: 0 14px;
+  border: 1px solid var(--rule); background: var(--touch-fill); font: 500 9px var(--font-label); letter-spacing: .12em;
+  cursor: pointer; -webkit-user-select: none; user-select: none; }
+.options__panel { display: grid; gap: 8px; max-width: 280px; margin-top: 8px; }
+.options__panel label { display: grid; gap: 6px; font-size: 8px; letter-spacing: .12em; color: var(--muted); }
+.options__panel select { min-height: 48px; padding: 0 12px; border: 1px solid var(--rule); border-radius: 0; background: var(--ink);
+  color: var(--paper); font: 500 11px var(--font-label); letter-spacing: .1em; }
+.options summary:focus-visible, .options__panel select:focus-visible { outline: 2px solid var(--paper); outline-offset: 2px; }
+.touch__button:disabled { opacity: .35; }
+@media (max-width: 680px) {
+  .options { top: 64px; left: max(20px, env(safe-area-inset-left)); }
+  .options[open] { padding: 64px 20px 20px max(20px, env(safe-area-inset-left)); }
+}

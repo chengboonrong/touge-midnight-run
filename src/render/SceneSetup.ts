@@ -1,10 +1,13 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 
-export function createScene(): {
+export type Quality = 'high' | 'low';
+
+export function createScene(initialQuality: Quality = 'high'): {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
+  setQuality: (quality: Quality) => void;
 } {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
@@ -29,6 +32,23 @@ export function createScene(): {
   moon.shadow.normalBias = 0.025;
   moon.shadow.bias = -0.0001;
   scene.add(moon);
+
+  // High: DPR cap 1.75 and moon shadows. Low: DPR 1 and no shadows.
+  const setQuality = (quality: Quality): void => {
+    const high = quality === 'high';
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, high ? 1.75 : 1)); // resizes the drawing buffer
+    renderer.shadowMap.enabled = high;
+    moon.castShadow = high;
+    if (!high) {
+      moon.shadow.map?.dispose(); // three recreates it when shadows return
+      moon.shadow.map = null;
+    }
+    scene.traverse(object => {
+      const material = (object as THREE.Mesh).material;
+      for (const m of Array.isArray(material) ? material : material ? [material] : []) m.needsUpdate = true;
+    });
+  };
+  setQuality(initialQuality);
 
   const generator = new THREE.PMREMGenerator(renderer);
   const room = new RoomEnvironment();
@@ -66,5 +86,5 @@ export function createScene(): {
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
-  return { renderer, scene, camera };
+  return { renderer, scene, camera, setQuality };
 }

@@ -74,6 +74,17 @@ export class TouchControls {
     this.root.remove();
   }
 
+  /** Releases every hold, including the tracked pointers and aria-pressed. */
+  clear(): void {
+    this.releaseAll();
+  }
+
+  /** Disables or enables the buttons, for example while a menu is open. */
+  setDisabled(disabled: boolean): void {
+    this.releaseAll();
+    for (const button of this.holds.keys()) button.disabled = disabled;
+  }
+
   private setPressed(button: HTMLButtonElement, hold: Hold, pressed: boolean): void {
     button.setAttribute('aria-pressed', String(pressed));
     if (hold.code) this.input.setTouchHeld(hold.code, pressed);
@@ -84,6 +95,7 @@ export class TouchControls {
     if (event.button !== 0) return; // touch, pen and the primary mouse button only
     event.preventDefault(); // no focus change, selection or compatibility mouse events
     const button = event.currentTarget as HTMLButtonElement;
+    if (button.disabled) return;
     const hold = this.holds.get(button)!;
     const first = hold.pointers.size === 0;
     button.setPointerCapture(event.pointerId);

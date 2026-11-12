@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { gunzipSync } from 'node:zlib';
 
 async function glb(name) {
   const bytes = await readFile(new URL(`../public/assets/touge/${name}.glb`, import.meta.url));
@@ -10,6 +11,15 @@ async function glb(name) {
   assert.equal(bytes.readUInt32LE(16), 0x4e4f534a);
   return JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString());
 }
+
+test('the compressed pass is smaller and decodes to the exact collision/render asset', async () => {
+  const [raw, packed] = await Promise.all([
+    readFile(new URL('../public/assets/touge/mountain_pass.glb', import.meta.url)),
+    readFile(new URL('../public/assets/touge/mountain_pass.glb.gz', import.meta.url)),
+  ]);
+  assert.ok(packed.length < raw.length, 'compressed transfer must save bytes');
+  assert.deepEqual(gunzipSync(packed), raw, 'geometry, colors and collision tags are identical');
+});
 
 test('Blender coupe exports independent, correctly oriented wheel pivots without studio objects', async () => {
   const data = await glb('coupe');

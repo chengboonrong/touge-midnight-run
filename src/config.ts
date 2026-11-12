@@ -235,14 +235,41 @@ export const VEHICLE: VehicleTuning = {
   shiftTime: 0.18,
 };
 
-/** Temporary follow camera in main.ts (replaced by a camera module later). */
+/** Tuning for render/ChaseCamera.ts. */
 export const CHASE_CAMERA = {
   /** Horizontal distance behind the car, m. */
   distance: 7.5,
   /** Height above the car's origin, m. */
-  height: 3,
+  height: 2.65,
   /** Height above the car's origin that the camera looks at, m. */
-  lookHeight: 0.8,
-  /** Follow sharpness, 1/s. Higher = tighter. */
+  lookHeight: 0.6,
+  /** Offset towards the car's right, m. */
+  rightOffset: 1.35,
+  /** Distance ahead of the car that the camera looks at, m. */
+  lookAhead: 5,
+  /**
+   * Response of the camera's offset around the car, 1/s. Higher = tighter.
+   * It filters the offset, not the position, so speed adds no distance.
+   */
   stiffness: 5,
+  /** Response of the acceleration, cornering, roll and FOV effects, 1/s. */
+  effectResponse: 3,
+  /** Extra distance per unit of forward acceleration, m per m/s^2. */
+  accelOffset: 0.08,
+  /** Limit of the acceleration/braking offset in either direction, m. */
+  maxAccelOffset: 1,
+  /** Sideways shift per unit of yaw rate, m per rad/s. */
+  cornerOffset: 0.5,
+  /** Limit of the cornering shift in either direction, m. */
+  maxCornerOffset: 0.6,
+  /** Camera roll per unit of sideslip angle, rad per rad. */
+  rollGain: 0.25,
+  /** Limit of the camera roll, rad (2 degrees). */
+  maxRoll: 0.0349,
+  /** Vertical field of view at standstill, degrees. */
+  fovMin: 63,
+  /** Vertical field of view at and above fovSpeed, degrees. */
+  fovMax: 72,
+  /** Speed at which the field of view reaches fovMax, m/s. */
+  fovSpeed: 50,
 } as const;

@@ -1,5 +1,6 @@
 """Build the game-ready Kurotake pass. Blender 5.2+, no external dependencies."""
 import argparse
+import gzip
 import bisect
 import json
 import math
@@ -260,6 +261,8 @@ def main():
     bpy.ops.export_scene.gltf(filepath=str(out/'mountain_pass.glb'),export_format='GLB',use_selection=True,
                               export_yup=True,export_apply=True,export_animations=False,
                               export_cameras=False,export_lights=False,export_extras=True)
+    (out/'mountain_pass.glb.gz').write_bytes(
+        gzip.compress((out/'mountain_pass.glb').read_bytes(), compresslevel=9, mtime=0))
     route={'name':'Kurotake Pass','width':9,'length':distances[-1],
            'points':[{'x':p.x,'y':.024,'z':-p.y} for p in points]}
     (out/'route.json').write_text(json.dumps(route,separators=(',',':')))

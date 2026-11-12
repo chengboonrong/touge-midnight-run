@@ -7,19 +7,23 @@ import { Input } from './core/Input';
 import { Car } from './entities/Car';
 import { PhysicsWorld } from './physics/PhysicsWorld';
 import { RaycastVehicle, type VehicleInput } from './physics/RaycastVehicle';
+import { ChaseCamera } from './render/ChaseCamera';
 import { createScene } from './render/SceneSetup';
+import { loadPassAsset } from './render/loadPassAsset';
 import { Hud } from './ui/Hud';
+import { Options, loadQuality } from './ui/Options';
 import { TouchControls } from './ui/TouchControls';
 import { addPassColliders, readRoute } from './world/MountainPass';
 import './styles.css';
 
 async function bootstrap(): Promise<void> {
-  const { renderer, scene, camera } = createScene();
+  const initialQuality = loadQuality();
+  const { renderer, scene, camera, setQuality } = createScene(initialQuality);
   const loader = new GLTFLoader();
   const [physics, coupe, pass, route] = await Promise.all([
     PhysicsWorld.create(),
     loader.loadAsync('/assets/touge/coupe.glb'),
-    loader.loadAsync('/assets/touge/mountain_pass.glb'),
+    loadPassAsset(loader),
     fetch('/assets/touge/route.json').then(async response => {
       if (!response.ok) throw Error(`Cannot load route (${response.status})`);
       return readRoute(await response.json());
@@ -65,37 +69,27 @@ async function bootstrap(): Promise<void> {
 
   const input = new Input(window);
   const hud = new Hud(route.points, route.length);
+  let touch: TouchControls | undefined;
   // Touch screens, including hybrid laptops; the keyboard keeps working.
   if (navigator.maxTouchPoints > 0 || matchMedia('(any-pointer: coarse)').matches) {
     document.body.dataset.touch = 'true';
-    new TouchControls(input, document, window);
+    touch = new TouchControls(input, document, window);
   }
+  // Opening and closing both drop every hold, so nothing stays stuck across the pause.
+  const options = new Options(document, initialQuality, setQuality, open => {
+    input.clearAll();
+    touch?.clear();
+    touch?.setDisabled(open);
+  });
   const controls: VehicleInput = { throttle: 0, brake: 0, steer: 0, handbrake: false };
-  const heading = new THREE.Vector3(0, 0, -1);
-  const scratch = new THREE.Vector3();
-  const desired = new THREE.Vector3();
+  const chase = new ChaseCamera(camera, CHASE_CAMERA);
   let snapCamera = true;
-
-  const updateCamera = (frameDt: number): void => {
-    scratch.set(0, 0, -1).applyQuaternion(car.root.quaternion);
-    scratch.y = 0;
-    if (scratch.lengthSq() > 1e-4) heading.copy(scratch).normalize();
-    desired.copy(car.root.position).addScaledVector(heading, -CHASE_CAMERA.distance);
-    desired.x -= heading.z * 1.35;
-    desired.z += heading.x * 1.35;
-    desired.y += 2.65;
-    if (snapCamera) { camera.position.copy(desired); snapCamera = false; }
-    else camera.position.lerp(desired, 1 - Math.exp(-CHASE_CAMERA.stiffness * frameDt));
-    scratch.copy(car.root.position).addScaledVector(heading, 5);
-    scratch.y += 0.6;
-    camera.lookAt(scratch);
-    const fov = 63 + Math.min(vehicle.speed / 50, 1) * 5;
-    if (Math.abs(camera.fov - fov) > 0.05) { camera.fov = fov; camera.updateProjectionMatrix(); }
-  };
 
   document.body.dataset.ready = 'true';
   const loop = new GameLoop({
     fixedUpdate: dt => {
+      // Paused: no forces and no world step. Both interpolation endpoints become the current pose.
+      if (options.isOpen) { input.clearAll(); car.savePreviousPose(); return; }
       controls.throttle = input.isHeld('KeyW') ? 1 : 0;
       controls.brake = input.isHeld('KeyS') ? 1 : 0;
       controls.steer = Number(input.isHeld('KeyD')) - Number(input.isHeld('KeyA'));
@@ -108,14 +102,15 @@ async function bootstrap(): Promise<void> {
     },
     render: (alpha, frameDt) => {
       car.render(alpha);
-      updateCamera(frameDt);
+      const velocity = vehicle.body.linvel();
+      chase.update(car.root, velocity, vehicle.body.angvel().y, frameDt, snapCamera);
+      snapCamera = false;
       const braking = controls.brake > 0 || controls.handbrake;
       brakeLight.intensity = braking ? 1.2 : 0.35;
       for (const material of tailMaterials) material.emissiveIntensity = braking ? 2.8 : 0.8;
       renderer.render(scene, camera);
-      const velocity = vehicle.body.linvel();
       hud.update(Math.hypot(velocity.x, velocity.z) * 3.6, car.root.position,
-        Math.atan2(heading.x, -heading.z), controls.handbrake, vehicle.forwardSpeed < -0.5, vehicle.engine);
+        Math.atan2(chase.forward.x, -chase.forward.z), controls.handbrake, vehicle.forwardSpeed < -0.5, vehicle.engine);
     },
   }, { fixedHz: PHYSICS_HZ });
   loop.start();
