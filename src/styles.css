@@ -121,6 +121,11 @@ body[data-touch] .speedometer { bottom: calc(var(--touch-edge) + 132px); }
 .options__panel button[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
 .options__panel input:focus-visible, .options__panel button:focus-visible { outline: 2px solid var(--paper); outline-offset: 2px; }
 .options__note { margin: 0; font-size: 8px; letter-spacing: .12em; line-height: 1.6; color: var(--muted); }
+/* Development tuning: plain labelled numeric inputs that scroll with Options. */
+.tuning__fields { display: grid; gap: 8px; margin-top: 8px; }
+.options__panel input[type=number] { min-height: 48px; padding: 0 12px; border: 1px solid var(--rule); border-radius: 0; background: var(--ink);
+  color: var(--paper); font: 500 11px var(--font-label); letter-spacing: .1em; }
+.options__note:empty { display: none; }
 @media (max-width: 680px) {
   .options { top: 64px; left: max(20px, env(safe-area-inset-left)); }
   .options[open] { padding: 64px 20px 20px max(20px, env(safe-area-inset-left)); }

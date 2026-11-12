@@ -365,6 +365,7 @@ export class RaycastVehicle {
       rapier.ColliderDesc.cuboid(half.x, half.y, half.z).setMass(tuning.mass),
       this.body,
     );
+    this.applyMassProperties();
 
     const y = tuning.suspensionMountY;
     this.wheelMounts = [
@@ -384,6 +385,31 @@ export class RaycastVehicle {
   /** Current front wheel angle in rad. Positive = left. */
   get steerAngle(): number {
     return this.steer;
+  }
+
+  /**
+   * Sets the chassis mass properties from this.tuning: mass, a centre of mass
+   * at (0, centerOfMassY ?? 0, 0) in chassis space, and the principal inertia
+   * of a uniform box with the chassis half extents. This replaces the
+   * collider's mass properties (no mass is added) and is a prescribed box
+   * inertia about the shifted centre, not a computed mass distribution of the
+   * render model. The body is recomputed at once and woken. Called at
+   * construction and when the tuning changes, never per step.
+   */
+  applyMassProperties(): void {
+    const { mass, chassisHalfExtents: half } = this.tuning;
+    const x2 = half.x * half.x;
+    const y2 = half.y * half.y;
+    const z2 = half.z * half.z;
+    const k = mass / 3;
+    this.collider.setMassProperties(
+      mass,
+      { x: 0, y: this.tuning.centerOfMassY ?? 0, z: 0 },
+      { x: k * (y2 + z2), y: k * (x2 + z2), z: k * (x2 + y2) },
+      { x: 0, y: 0, z: 0, w: 1 },
+    );
+    this.body.recomputeMassPropertiesFromColliders();
+    this.body.wakeUp();
   }
 
   /** Chassis speed along its own forward axis in m/s. Negative = reversing. */

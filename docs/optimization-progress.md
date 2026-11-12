@@ -356,3 +356,24 @@ All actions remain within320/375/414/768-wide and568x320 landscape viewports,
 explicit menu disposal on real unload. Physical phone/audio comfort still manual.
 API$1.68; cumulative estimated$57.51, remaining$42.49 of$100. Next: development
 practice tuning with stock settings restored for Time Attack/PB fairness.
+
+## Phase 1c — development practice tuning and actual mass properties
+
+Files: VehicleTune, TuningPanel, config, RaycastVehicle, main, styles, native
+regression file and development-tuning doc. Sixteen validated fields expose
+engine/gearing/grip/steering/handbrake/springs/mass/COM in a nested DEV-only panel.
+One invalid field rejects the whole change. A session copy isolates VEHICLE;
+Time Attack restores stock physics and panel values before reset/countdown,
+protecting PBs. No storage persistence or artificial yaw/drift force was added.
+COM uses prescribed box principal inertia about the configured offset, not a
+render-model mass distribution. Default remains zero and matches old inertia.
+
+Tests were red first (missing module). Typecheck/build pass;218 tests pass.
+The host added native min/max mass/COM/spring range-corner acceleration/braking:
+all loaded, floor clear, upright, final speed below1m/s. Chrome observed actual
+Rapier body mass/COM after apply and stock restoration, atomic invalid input,
+Practice reset with Options paused, and all16 inputs280x48px at320x480 with
+scrollable actions. Production panel absence and human driving comfort remain
+checks below. The proposed plural tests path was corrected to real test/.
+API$1.37; cumulative estimated$58.87, remaining$41.13. Next: actual-contact
+sustained guardrail scrape, then final review and production validation.

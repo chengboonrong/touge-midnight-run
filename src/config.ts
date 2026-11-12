@@ -22,8 +22,15 @@ export const GRAVITY = { x: 0, y: -9.81, z: 0 } as const;
 /** Tuning for physics/RaycastVehicle.ts (and the placeholder car mesh). */
 export interface VehicleTuning {
   // --- Chassis ---------------------------------------------------------------
-  /** Chassis mass in kg. The centre of mass is the centre of the chassis box. */
+  /** Chassis mass in kg. */
   mass: number;
+  /**
+   * Centre of mass offset along the chassis' local Y from the centre of the
+   * chassis box, m. Optional; missing = 0 (the box centre). The inertia stays
+   * that of a uniform box of this mass, prescribed about the shifted centre:
+   * it is not computed from the render model's mass distribution.
+   */
+  centerOfMassY?: number;
   /** Half extents of the chassis box collider. */
   chassisHalfExtents: { x: number; y: number; z: number };
   /** Rapier linear damping: a little speed-proportional drag. */
@@ -175,6 +182,7 @@ export interface VehicleTuning {
 
 export const VEHICLE: VehicleTuning = {
   mass: 1200,
+  centerOfMassY: 0,
   chassisHalfExtents: { x: 0.96, y: 0.3, z: 2.0 },
   linearDamping: 0.02,
   angularDamping: 0.5,

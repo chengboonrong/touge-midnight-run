@@ -9,6 +9,7 @@ import { ImpactFeedback, impactThresholdForce } from './physics/ImpactFeedback';
 import { NearMiss } from './physics/NearMiss';
 import { PhysicsWorld } from './physics/PhysicsWorld';
 import { RaycastVehicle, type VehicleInput } from './physics/RaycastVehicle';
+import { applyTune, cloneTuning, tunePatch, type TunePatch } from './physics/VehicleTune';
 import { ChaseCamera } from './render/ChaseCamera';
 import { DrivingEffects } from './render/DrivingEffects';
 import { MangaFeedback } from './render/MangaFeedback';
@@ -27,6 +28,7 @@ import { Options, loadQuality } from './ui/Options';
 import { StartMenu } from './ui/StartMenu';
 import type { MusicState } from './audio/musicState';
 import { TouchControls } from './ui/TouchControls';
+import { TuningPanel } from './ui/TuningPanel';
 import { addPassColliders, readRoute } from './world/MountainPass';
 import './styles.css';
 
@@ -56,23 +58,25 @@ async function bootstrap(): Promise<void> {
     }
   });
   addPassColliders(pass.scene, physics.world);
-  const vehicle = new RaycastVehicle(RAPIER, physics.world, VEHICLE);
+  // Session copy: development tuning edits this, never the exported stock VEHICLE.
+  const tuning = cloneTuning(VEHICLE);
+  const vehicle = new RaycastVehicle(RAPIER, physics.world, tuning);
   const car = new Car(vehicle, coupe.scene);
   // Tire smoke and skid marks. Null after a real unload, so the loop must use `effects?.`.
   let effects: DrivingEffects | null = new DrivingEffects(scene, vehicle, initialQuality);
   // Edge streaks, impact strokes and the near-miss word. Null after a real unload.
   let manga: MangaFeedback | null = new MangaFeedback(document, initialQuality);
-  const nearMiss = new NearMiss(RAPIER, physics.world, vehicle.body, vehicle.collider, VEHICLE.chassisHalfExtents.x);
+  const nearMiss = new NearMiss(RAPIER, physics.world, vehicle.body, vehicle.collider, tuning.chassisHalfExtents.x);
   let nearPending = false;
   // Collision feedback: contact-force events on the chassis collider only, drained every fixed step.
   const vehicleCollider = vehicle.collider;
   vehicleCollider.setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS);
-  vehicleCollider.setContactForceEventThreshold(impactThresholdForce(VEHICLE.mass, FIXED_DT));
+  vehicleCollider.setContactForceEventThreshold(impactThresholdForce(tuning.mass, FIXED_DT));
   const vehicleHandle = vehicleCollider.handle;
   const impacts = new ImpactFeedback();
   let contactEvents: RAPIER.EventQueue | null = new RAPIER.EventQueue(true);
   const onContactForce = (event: RAPIER.TempContactForceEvent): void => {
-    impacts.contact(event.collider1(), event.collider2(), vehicleHandle, event.totalForceMagnitude(), FIXED_DT, VEHICLE.mass);
+    impacts.contact(event.collider1(), event.collider2(), vehicleHandle, event.totalForceMagnitude(), FIXED_DT, tuning.mass);
   };
   window.addEventListener('pagehide', event => {
     // A page kept in the back/forward cache keeps its queue; only a real unload frees the WASM memory.
@@ -139,7 +143,7 @@ async function bootstrap(): Promise<void> {
   // Time attack: free practice is the default; a timed run starts from the OPTIONS menu.
   const recordStore = browserStorage();
   const bestKey = courseKey('kurotake', route.length, route.points.length);
-  const race = new RaceSession(route.points, route.width, VEHICLE.spawn, loadBestLap(recordStore, bestKey));
+  const race = new RaceSession(route.points, route.width, tuning.spawn, loadBestLap(recordStore, bestKey));
   const drift = new DriftScore();
   const raceHud = new RaceHud(document);
   const markers = new RaceMarkers(scene, race.gates, route.width);
@@ -191,10 +195,22 @@ async function bootstrap(): Promise<void> {
   };
   /** Title -> free practice from the settled pose (no spawn drop). Held keys are kept. */
   const enterPractice = (): void => { setMenu(false); clearRun(); race.cancel(vehicle.body.translation()); pump(); };
+  let tuningPanel: TuningPanel | undefined;
+  /** Writes validated tuning into the session copy, the real chassis mass properties and the impact threshold. */
+  const applyTuning = (patch: TunePatch): void => {
+    applyTune(tuning, patch);
+    vehicle.applyMassProperties();
+    vehicleCollider.setContactForceEventThreshold(impactThresholdForce(tuning.mass, FIXED_DT));
+  };
+  /** Back to the pristine stock values. Time Attack always runs on these, so tuning never reaches a PB. */
+  const restoreStock = (): void => { applyTuning(tunePatch(VEHICLE)); tuningPanel?.refresh(tuning); };
+  /** After a tuning change: leave the title, cancel any race and reset into practice. Options stays open (paused). */
+  const retune = (): void => { dropHolds(); setMenu(false); toPractice(); };
   const startAttack = (): void => {
     dropHolds();
     options.root.open = false;
     setMenu(false);
+    restoreStock();
     resetRun();
     // The toggle event arrives later; unpause now so the first countdown beep is scheduled, not dropped.
     audio.setPaused(false);
@@ -220,6 +236,10 @@ async function bootstrap(): Promise<void> {
     menuButton('FREE PRACTICE', freePractice),
     menuButton('TITLE SCREEN', toTitle),
   );
+  if (import.meta.env.DEV) {
+    tuningPanel = new TuningPanel(document, options.panel, tuning,
+      patch => { applyTuning(patch); retune(); }, () => { restoreStock(); retune(); });
+  }
   pump();
 
   // Compile even currently invisible smoke/skid materials before the first driving frame.
