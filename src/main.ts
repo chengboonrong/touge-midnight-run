@@ -6,6 +6,7 @@ import { GameLoop } from './core/GameLoop';
 import { Input } from './core/Input';
 import { Car } from './entities/Car';
 import { ImpactFeedback, impactThresholdForce } from './physics/ImpactFeedback';
+import { GuardrailScrape } from './physics/GuardrailScrape';
 import { NearMiss } from './physics/NearMiss';
 import { PhysicsWorld } from './physics/PhysicsWorld';
 import { RaycastVehicle, type VehicleInput } from './physics/RaycastVehicle';
@@ -57,7 +58,12 @@ async function bootstrap(): Promise<void> {
       }
     }
   });
-  addPassColliders(pass.scene, physics.world);
+  // Only the exporter's known `Guardrails` collision mesh can scrape; road and terrain colliders never do.
+  const railSet = new Set<number>();
+  addPassColliders(pass.scene, physics.world, (collider, meshName) => {
+    if (meshName === 'Guardrails') railSet.add(collider.handle);
+  });
+  const railHandles: ReadonlySet<number> = railSet;
   // Session copy: development tuning edits this, never the exported stock VEHICLE.
   const tuning = cloneTuning(VEHICLE);
   const vehicle = new RaycastVehicle(RAPIER, physics.world, tuning);
@@ -68,6 +74,8 @@ async function bootstrap(): Promise<void> {
   let manga: MangaFeedback | null = new MangaFeedback(document, initialQuality);
   const nearMiss = new NearMiss(RAPIER, physics.world, vehicle.body, vehicle.collider, tuning.chassisHalfExtents.x);
   let nearPending = false;
+  // Sustained guardrail scrape level from real chassis-rail contact, read after every world step. Data only.
+  const scrape = new GuardrailScrape(physics.world, vehicle.body, vehicle.collider, railHandles);
   // Collision feedback: contact-force events on the chassis collider only, drained every fixed step.
   const vehicleCollider = vehicle.collider;
   vehicleCollider.setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS);
@@ -177,7 +185,7 @@ async function bootstrap(): Promise<void> {
     }
   };
   /** Clears visual histories, drift and any scheduled race cue; the car pose is kept. */
-  const clearRun = (): void => { snapCamera = true; impacts.reset(); drift.reset(); effects?.reset(); manga?.reset(); nearMiss.reset(); nearPending = false; audio.cancelRaceCue(); };
+  const clearRun = (): void => { snapCamera = true; impacts.reset(); drift.reset(); effects?.reset(); manga?.reset(); nearMiss.reset(); scrape.reset(); nearPending = false; audio.cancelRaceCue(); };
   const resetRun = (): void => { car.reset(); clearRun(); };
   /** R or FREE PRACTICE: drops the current lap, keeps the best. Held keys are left as they are. */
   const toPractice = (): void => {
@@ -243,7 +251,12 @@ async function bootstrap(): Promise<void> {
   pump();
 
   // Compile even currently invisible smoke/skid materials before the first driving frame.
+  // The loading overlay blocks pointers; inert also blocks keyboard activation behind it.
+  options.root.inert = true;
+  menu.root.inert = true;
   await renderer.compileAsync(scene, camera);
+  options.root.inert = false;
+  menu.root.inert = false;
 
   document.body.dataset.ready = 'true';
   const loop = new GameLoop({
@@ -275,6 +288,7 @@ async function bootstrap(): Promise<void> {
         queue.drainContactForceEvents(onContactForce);
       } else physics.step();
       car.readPhysicsPose();
+      scrape.update(dt);
       effects?.fixedUpdate(dt);
       race.update(dt, vehicle.body.translation());
       const after = race.state;
@@ -323,7 +337,8 @@ async function bootstrap(): Promise<void> {
       hud.update(Math.hypot(velocity.x, velocity.z) * 3.6, car.root.position,
         Math.atan2(chase.forward.x, -chase.forward.z), controls.handbrake, vehicle.forwardSpeed < -0.5, vehicle.engine);
       audio.update(vehicle.engine, vehicle.wheels, Math.hypot(velocity.x, velocity.z),
-        vehicle.engine.gear < 0 ? controls.brake : controls.throttle, controls.handbrake);
+        vehicle.engine.gear < 0 ? controls.brake : controls.throttle, controls.handbrake,
+        options.isOpen ? 0 : scrape.level);
       raceHud.render(race, drift, frameDt, options.isOpen);
       markers.update(race.state, race.checkpoint);
     },

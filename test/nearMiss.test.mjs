@@ -79,3 +79,15 @@ test('a large pass-style trimesh candidate with no touching manifold does not su
  t.diagnostic(JSON.stringify({candidates,solverContacts,events}));
  assert.equal(events,1);
 });
+
+test('a shallow road-like slope is rejected even when its side ray is close', t => {
+ const s=scene(t,[]);
+ // Query-only geometry isolates the normal filter from the independent contact suppression.
+ s.world.createCollider(RAPIER.ColliderDesc.trimesh(
+  new Float32Array([-2,-0.5,-30,4,1.5,-30,4,1.5,-90,-2,-0.5,-90]),
+  new Uint32Array([0,1,2,0,2,3]),
+ ).setCollisionGroups(0));
+ assert.equal(drive(s,240),0);
+ const hit=s.world.castRayAndGetNormal(new RAPIER.Ray({x:0,y:0.6,z:-40},{x:1,y:0,z:0}),1.41,true);
+ assert.ok(hit && Math.abs(hit.normal.y)>0.9 && hit.timeOfImpact<1.41);
+});

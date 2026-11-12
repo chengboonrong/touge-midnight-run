@@ -111,3 +111,8 @@ export function windLevel(speed: number): number {
   const x = clamp01(Math.abs(num(speed)) / 55);
   return x * x;
 }
+
+/** Guardrail scrape 0..1 from the contact detector; 0 for anything that is not a finite number. */
+export function scrapeLevel(value: unknown): number {
+  return clamp01(num(value));
+}

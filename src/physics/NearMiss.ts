@@ -1,6 +1,6 @@
 /**
  * Near-miss detector. About ten times per simulated second it casts one horizontal ray to each side of
- * the chassis and reports a single event when a fast, grounded car passes a near-vertical obstacle within
+ * the chassis and reports a single event when a fast, grounded car passes a steep-sided obstacle within
  * `range` of its side without touching anything. Data only: it applies no forces and changes no chassis or world state.
  *
  * A valid fast sample with nothing close must come first (armed), so starting, resetting or accelerating
@@ -10,7 +10,9 @@
  */
 import type RAPIER from '@dimforge/rapier3d-compat';
 
-export const NEAR_MISS = { interval: 0.1, minSpeed: 22, range: 0.45, cooldown: 1.5, minWheels: 3, maxNormalY: 0.4 } as const;
+// Corrugated rail faces have |normal.y| around 0.58–0.71. Accept steep faces
+// (at least 37 degrees from horizontal), while rejecting ordinary road slopes.
+export const NEAR_MISS = { interval: 0.1, minSpeed: 22, range: 0.45, cooldown: 1.5, minWheels: 3, maxNormalY: 0.8 } as const;
 
 export class NearMiss {
   private readonly world: RAPIER.World;

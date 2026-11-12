@@ -78,3 +78,11 @@ test('malformed or nonfinite preferences fall back safely', () => {
   assert.ok(m.masterLevel({ volume: 1, muted: false }) < 1);
   assert.ok(unit(m.masterLevel({ volume: NaN, muted: false })));
 });
+
+test('scrape level is clamped to 0..1 and silent for anything nonfinite', () => {
+  assert.equal(m.scrapeLevel(0), 0);
+  assert.equal(m.scrapeLevel(0.4), 0.4);
+  assert.equal(m.scrapeLevel(7), 1);
+  assert.equal(m.scrapeLevel(-3), 0);
+  for (const bad of [NaN, Infinity, -Infinity, undefined, null, '1']) assert.equal(m.scrapeLevel(bad), 0);
+});

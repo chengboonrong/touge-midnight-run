@@ -20,7 +20,8 @@ export function readRoute(data: unknown): PassRoute {
 }
 
 /** Blender's collision extras follow the visual meshes, including parent transforms. */
-export function addPassColliders(root: THREE.Object3D, world: RAPIER.World): number {
+export function addPassColliders(root: THREE.Object3D, world: RAPIER.World,
+  onCreated?: (collider: RAPIER.Collider, meshName: string) => void): number {
   root.updateWorldMatrix(true, true);
   let count = 0;
   const point = new THREE.Vector3();
@@ -52,7 +53,9 @@ export function addPassColliders(root: THREE.Object3D, world: RAPIER.World): num
         [indices[i + 1], indices[i + 2]] = [indices[i + 2], indices[i + 1]];
       }
     }
-    world.createCollider(RAPIER.ColliderDesc.trimesh(vertices, indices));
+    const collider = world.createCollider(RAPIER.ColliderDesc.trimesh(vertices, indices));
+    // Exactly once per created collider, with the mesh's own name.
+    onCreated?.(collider, object.name);
     count++;
   });
   if (!count) throw Error('The mountain-pass asset has no collision meshes');

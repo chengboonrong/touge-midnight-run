@@ -42,6 +42,30 @@ test('a decorative asset without collision metadata is rejected', () => {
   finally { world.free(); }
 });
 
+test('onCreated runs once per created collider with the mesh name; the returned count is unchanged', () => {
+  const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+  try {
+    const root = new THREE.Group();
+    const tagged = new THREE.Group();
+    tagged.userData.collision = 'trimesh';
+    for (const name of ['Guardrails', 'Road_Surface']) {
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(4, 4));
+      mesh.name = name;
+      tagged.add(mesh);
+    }
+    root.add(tagged);
+    const decoration = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2)); // untagged: no collider, no callback
+    decoration.name = 'Decoration';
+    root.add(decoration);
+    const seen = [];
+    assert.equal(addPassColliders(root, world, (collider, name) => { seen.push([collider.handle, name]); }), 2);
+    assert.deepEqual(seen.map(entry => entry[1]), ['Guardrails', 'Road_Surface']);
+    assert.equal(new Set(seen.map(entry => entry[0])).size, 2);
+    for (const [handle] of seen) assert.equal(world.getCollider(handle).handle, handle);
+    assert.equal(addPassColliders(root, world), 2); // two-argument callers still work
+  } finally { world.free(); }
+});
+
 test('invalid route metadata is rejected before the HUD can consume it', () => {
   const valid = { name: 'Pass', width: 9, length: 1000, points: [{ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 1 }, { x: 2, y: 0, z: 0 }] };
   assert.equal(readRoute(valid), valid);

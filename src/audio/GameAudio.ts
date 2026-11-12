@@ -5,7 +5,7 @@
  */
 import {
   engineFrequency, engineLayers, engineLevel, groundedFraction, masterLevel,
-  parseAudioPrefs, parseVolume, roadLevel, rpmFraction, tireLevel, windLevel,
+  parseAudioPrefs, parseVolume, roadLevel, rpmFraction, scrapeLevel, tireLevel, windLevel,
 } from './audioMath';
 import type { AudioPrefs, EngineLike, WheelLike } from './audioMath';
 import { AutomationThrottle, ContextGate, targetChanged } from './audioState';
@@ -36,6 +36,8 @@ interface Graph {
   tireFilter: BiquadFilterNode;
   roadGain: GainNode;
   windGain: GainNode;
+  /** Sustained guardrail scrape: temporary original synth (band-passed noise), level from real contact. */
+  scrapeGain: GainNode;
   fxGain: GainNode;
   fxFilter: BiquadFilterNode;
   /** One preallocated voice for race cues. */
@@ -114,6 +116,10 @@ function buildGraph(ctx: AudioContext): Graph {
   noise(filter('lowpass', 180, 0.5, roadGain), 0.5);
   const windGain = gain(master);
   noise(filter('bandpass', 520, 0.5, windGain), 1);
+  // Guardrail scrape: temporary, original synthesized layer. The shared seeded noise buffer through one
+  // band-pass (~1800 Hz, Q 1.2). Built once, gain 0 until a real contact drives it; goes through the SFX master.
+  const scrapeGain = gain(master);
+  noise(filter('bandpass', 1800, 1.2, scrapeGain), 0.25);
   const fxGain = gain(master);
   const fxFilter = filter('lowpass', 300, 0.7, fxGain);
   noise(fxFilter, 1.5);
@@ -125,7 +131,7 @@ function buildGraph(ctx: AudioContext): Graph {
   nodes.push(cueOsc);
   sources.push(cueOsc);
 
-  return { ctx, bus: compressor, master, engineGain, engineFilter, oscillators, layerGains, tireGain, tireFilter, roadGain, windGain, fxGain, fxFilter, cueOsc, cueGain, sources, nodes };
+  return { ctx, bus: compressor, master, engineGain, engineFilter, oscillators, layerGains, tireGain, tireFilter, roadGain, windGain, scrapeGain, fxGain, fxFilter, cueOsc, cueGain, sources, nodes };
 }
 
 /** volume = SFX, muted = mute all (older SFX-only data keeps its values), musicVolume = music. */
@@ -151,7 +157,7 @@ export class GameAudio {
   private gate: ContextGate | null = null;
   private readonly throttle = new AutomationThrottle();
   /** Last scheduled target per continuous param slot; NaN until first scheduled. */
-  private readonly targets = new Float64Array(14).fill(NaN);
+  private readonly targets = new Float64Array(15).fill(NaN);
   private failed = false;
   private disposed = false;
   private lastGear = 0;
@@ -213,7 +219,7 @@ export class GameAudio {
   }
 
   /** Per rendered frame. Only retargets AudioParams; creates no nodes and never resumes. */
-  update(engine: EngineLike, wheels: ReadonlyArray<WheelLike>, speed: number, throttle: number, handbrake: boolean): void {
+  update(engine: EngineLike, wheels: ReadonlyArray<WheelLike>, speed: number, throttle: number, handbrake: boolean, scrape = 0): void {
     const shifted = engine.gear > 0 && this.lastGear > 0 && engine.gear !== this.lastGear;
     const handEdge = handbrake !== this.lastHandbrake;
     this.lastGear = engine.gear;
@@ -240,6 +246,8 @@ export class GameAudio {
       this.aim(11, g.tireFilter.frequency, 900 + 500 * tire, t, 0.1);
       this.aim(12, g.roadGain.gain, 0.3 * roadLevel(speed, groundedFraction(wheels)), t, 0.1);
       this.aim(13, g.windGain.gain, 0.18 * windLevel(speed), t, 0.2);
+      // At most 0.12 linear, so tire and engine keep priority. The AudioParam does all the smoothing.
+      this.aim(14, g.scrapeGain.gain, 0.12 * scrapeLevel(scrape), t, 0.04);
     }
     if (shifted) this.thump(g, t, 260, 0.35);
     else if (handEdge) this.thump(g, t, handbrake ? 700 : 400, handbrake ? 0.3 : 0.12);
@@ -392,7 +400,14 @@ export class GameAudio {
     const now = ctx.currentTime;
     g.master.gain.cancelScheduledValues(now);
     if (want) g.master.gain.setTargetAtTime(masterLevel(this.prefs), now, 0.04);
-    else { g.master.gain.setValueAtTime(0, now); this.clearCue(g, now); }
+    else {
+      g.master.gain.setValueAtTime(0, now);
+      this.clearCue(g, now);
+      // Zero the scrape branch at once and forget its cached target, so a resume or reset cannot play a stale grind.
+      g.scrapeGain.gain.cancelScheduledValues(now);
+      g.scrapeGain.gain.setValueAtTime(0, now);
+      this.targets[14] = NaN;
+    }
     this.gate?.sync(want, gesture);
     this.music?.setLevel(musicLevel(this.prefs.musicVolume, this.prefs.muted));
     this.music?.setActive(want);
