@@ -586,3 +586,388 @@ test('slipSpeed stays finite in a handbrake slide and is zero airborne and after
     }
   });
 });
+
+// --- Phase 1b: slip-angle tire curve and handbrake grip recovery -------------
+
+// Explicit curve tuning, so these tests do not depend on the default values
+// (which are tuning hypotheses). Angles in rad, speed in m/s, time in s.
+const TIRE = {
+  tirePeakSlipAngleFront: 0.14,
+  tirePeakSlipAngleRear: 0.08,
+  tireSlidingGrip: 0.7,
+  slipAngleMinSpeed: 1,
+  handbrakeGripRecoveryTime: 0.4,
+};
+const AXLES = [
+  { name: 'front', wheel: 0, peak: TIRE.tirePeakSlipAngleFront, grip: VEHICLE.gripLateralFront },
+  { name: 'rear', wheel: 2, peak: TIRE.tirePeakSlipAngleRear, grip: VEHICLE.gripLateralRear },
+];
+
+/**
+ * Settles a car with the TIRE tuning, then solves one update() (no world
+ * step) at a forward speed and a slip angle (rad, positive = sliding right).
+ */
+function solveSlip(t, speed, angle, input = {}, dt = FIXED_DT) {
+  const s = scene(t, TIRE);
+  s.run(SETTLE_STEPS);
+  s.body.setLinvel({ x: speed * Math.tan(angle), y: 0, z: -speed }, true);
+  s.vehicle.update({ ...NEUTRAL, ...input }, dt);
+  return s;
+}
+
+/** Lateral force opposing a rightward slip, as a fraction of peak lateral grip. */
+function gripUse(s, axle) {
+  const wheel = s.vehicle.wheels[axle.wheel];
+  return -wheel.lateralForce / (axle.grip * wheel.load);
+}
+
+test('lateral force builds progressively to a peak slip angle, then eases to sliding grip', (t) => {
+  const speed = 20;
+  for (const axle of AXLES) {
+    const use = (fraction) => gripUse(solveSlip(t, speed, fraction * axle.peak), axle);
+    const below = [0.25, 0.5, 0.75].map(use);
+    const peak = use(1);
+    const beyond = [2, 4].map(use);
+    const sideways = gripUse(solveSlip(t, speed, 1.2), axle);
+    t.diagnostic(
+      `${axle.name} grip use at 0.25/0.5/0.75/1/2/4 x peak and 1.2 rad: ` +
+        [...below, peak, ...beyond, sideways].map((value) => value.toFixed(3)).join(', '),
+    );
+
+    // Progressive: a quarter of the peak angle is well short of full grip.
+    assert.ok(below[0] > 0.2 && below[0] < 0.7, `${axle.name} at a quarter of the peak: ${below[0]}`);
+    assert.ok(below[0] < below[1] && below[1] < below[2] && below[2] < peak, `${axle.name} rises`);
+    assert.ok(peak > 0.95 && peak <= 1 + 1e-9, `${axle.name} peak: ${peak}`);
+    // Past the peak the force falls, but never below the sliding fraction.
+    assert.ok(beyond[0] < peak && beyond[1] < beyond[0] && sideways < beyond[1], `${axle.name} falls`);
+    assert.ok(sideways < peak - 0.1, `${axle.name} sliding ${sideways} vs peak ${peak}`);
+    assert.ok(sideways >= TIRE.tireSlidingGrip - 1e-6, `${axle.name} keeps sliding grip: ${sideways}`);
+
+    // Mirrored slip gives the mirrored force.
+    const right = solveSlip(t, speed, 0.5 * axle.peak).vehicle.wheels[axle.wheel].lateralForce;
+    const left = solveSlip(t, speed, -0.5 * axle.peak).vehicle.wheels[axle.wheel].lateralForce;
+    assert.ok(right < 0 && left > 0, `${axle.name} opposes slip: ${right}, ${left}`);
+    assert.ok(Math.abs(left + right) < 0.02 * left, `${axle.name} symmetric: ${right}, ${left}`);
+  }
+
+  // The front and rear peak angles are separate: at the rear's peak angle the
+  // front (larger peak angle) is still building.
+  const s = solveSlip(t, speed, TIRE.tirePeakSlipAngleRear);
+  assert.ok(gripUse(s, AXLES[0]) < gripUse(s, AXLES[1]) - 0.05, 'front peaks later than rear');
+});
+
+test('the same slip angle gives the same grip use at any driving speed', (t) => {
+  const angle = 0.07; // half the front peak angle
+  const atSpeed = [12, 24, 40].map((speed) => solveSlip(t, speed, angle));
+  for (const axle of AXLES) {
+    const uses = atSpeed.map((s) => gripUse(s, axle));
+    t.diagnostic(`${axle.name} grip use at 12/24/40 m/s: ${uses.map((u) => u.toFixed(4)).join(', ')}`);
+    for (const use of uses) {
+      assert.ok(Math.abs(use - uses[0]) < 0.02, `${axle.name}: ${use} vs ${uses[0]}`);
+    }
+  }
+  const frontUse = gripUse(atSpeed[0], AXLES[0]);
+  assert.ok(frontUse > 0.5 && frontUse < 0.95, `front is below its peak: ${frontUse}`);
+
+  // The same 1 m/s of side slip is a smaller angle at speed, so less force.
+  const slow = gripUse(solveSlip(t, 12, Math.atan2(1, 12)), AXLES[0]);
+  const fast = gripUse(solveSlip(t, 40, Math.atan2(1, 40)), AXLES[0]);
+  assert.ok(slow > 1.5 * fast, `1 m/s of slip: ${slow} at 12 m/s vs ${fast} at 40 m/s`);
+});
+
+test('the slip-angle response does not depend on the step size at driving speed', (t) => {
+  for (const angle of [0.01, 0.3]) {
+    const [reference, ...others] = [1 / 60, 1 / 120, 1 / 240].map((dt) =>
+      solveSlip(t, 20, angle, {}, dt),
+    );
+    for (const axle of AXLES) {
+      const expected = reference.vehicle.wheels[axle.wheel].lateralForce;
+      assert.ok(expected < -100, `${axle.name} produces force at ${angle} rad: ${expected}`);
+      for (const other of others) {
+        const actual = other.vehicle.wheels[axle.wheel].lateralForce;
+        assert.ok(
+          Math.abs(actual - expected) < 1e-6 * Math.abs(expected),
+          `${axle.name} at ${angle} rad: ${actual} vs ${expected}`,
+        );
+      }
+    }
+  }
+});
+
+test('lateral tire force only ever opposes slip, down to a standstill', (t) => {
+  // Never pushes along the slip, and never more than would stop the slip of a
+  // quarter of the car within one step.
+  const quarterMass = VEHICLE.mass / 4;
+  const assertDissipative = (s) => {
+    for (const wheel of s.vehicle.wheels) {
+      assert.ok(wheel.lateralForce * wheel.slipSpeed <= 0, 'opposes slip');
+      assert.ok(
+        Math.abs(wheel.lateralForce) * FIXED_DT <= Math.abs(wheel.slipSpeed) * quarterMass + 1e-9,
+        `${wheel.lateralForce} N on ${wheel.slipSpeed} m/s of slip`,
+      );
+    }
+  };
+  for (const speed of [0, 0.3, 8, 30]) {
+    for (const side of [0.01, 0.2, 8, -8]) {
+      const s = scene(t, TIRE);
+      s.run(SETTLE_STEPS);
+      s.body.setLinvel({ x: side, y: 0, z: -speed }, true);
+      s.vehicle.update(NEUTRAL, FIXED_DT);
+      assertDissipative(s);
+    }
+  }
+
+  // A sideways nudge at a standstill dies out and the car rests without jitter.
+  const s = scene(t, TIRE);
+  s.run(SETTLE_STEPS);
+  s.body.setLinvel({ x: 0.3, y: 0, z: 0 }, true);
+  s.run(240, {}, () => {
+    assertDissipative(s);
+    for (const wheel of s.vehicle.wheels) assert.ok(Number.isFinite(wheel.slipAngle));
+  });
+  assertSettled(s, 'after a sideways nudge');
+  const rest = s.body.translation();
+  s.run(120, {}, () => {
+    for (const wheel of s.vehicle.wheels) {
+      assert.ok(Math.abs(wheel.slipAngle) < 0.02, `resting slip angle ${wheel.slipAngle}`);
+    }
+  });
+  const end = s.body.translation();
+  assert.ok(Math.hypot(end.x - rest.x, end.y - rest.y, end.z - rest.z) < 1e-3, 'no creep at rest');
+  assertSettled(s, 'two seconds later');
+});
+
+test('slipAngle is the signed contact slip angle, with low-speed and reverse conventions', (t) => {
+  const near = (actual, expected, label) =>
+    assert.ok(Math.abs(actual - expected) < 0.005, `${label}: ${actual} vs ${expected}`);
+  const solveVelocity = (velocity, angvel) => {
+    const s = scene(t, TIRE);
+    s.run(SETTLE_STEPS);
+    s.body.setLinvel(velocity, true);
+    if (angvel) s.body.setAngvel(angvel, true);
+    s.vehicle.update(NEUTRAL, FIXED_DT);
+    return s;
+  };
+
+  // Driving forwards: positive = sliding to the wheel's right, like slipSpeed.
+  for (const angle of [0.3, -0.3]) {
+    const s = solveSlip(t, 15, angle);
+    s.vehicle.wheels.forEach((wheel, i) => {
+      near(wheel.slipAngle, angle, `wheel ${i}`);
+      assert.ok(wheel.slipAngle * wheel.slipSpeed > 0, `wheel ${i} sign matches slipSpeed`);
+    });
+  }
+  solveSlip(t, 15, 0).vehicle.wheels.forEach((wheel, i) => near(wheel.slipAngle, 0, `straight ${i}`));
+
+  // Reversing: measured against the rolling speed's magnitude, so the sign
+  // still follows slipSpeed (sliding right is positive).
+  const reversing = solveVelocity({ x: 2, y: 0, z: 10 });
+  reversing.vehicle.wheels.forEach((wheel, i) => near(wheel.slipAngle, Math.atan2(2, 10), `reverse ${i}`));
+
+  // Below slipAngleMinSpeed the angle is measured against that speed, so it
+  // fades to zero at a standstill instead of jumping to 90 degrees.
+  const creeping = solveVelocity({ x: 0.05, y: 0, z: 0 });
+  creeping.vehicle.wheels.forEach((wheel, i) =>
+    near(wheel.slipAngle, Math.atan2(0.05, TIRE.slipAngleMinSpeed), `creeping ${i}`),
+  );
+  const sideways = solveVelocity({ x: SLIDE_SIDE, y: 0, z: 0 });
+  sideways.vehicle.wheels.forEach((wheel, i) => {
+    assert.ok(wheel.slipAngle > 1.3 && wheel.slipAngle <= Math.PI / 2, `sideways ${i}: ${wheel.slipAngle}`);
+  });
+
+  // Pure yaw to the left: the nose sweeps left (negative), the tail right.
+  const spinning = solveVelocity({ x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 });
+  for (const i of FRONT) assert.ok(spinning.vehicle.wheels[i].slipAngle < -0.5, `front wheel ${i}`);
+  for (const i of REAR) assert.ok(spinning.vehicle.wheels[i].slipAngle > 0.5, `rear wheel ${i}`);
+});
+
+/** Total rear lateral force (N) of one update() in a fixed slide at the rear peak angle. */
+function rearLateralAt(s, input = {}) {
+  s.body.setLinvel({ x: 20 * Math.tan(TIRE.tirePeakSlipAngleRear), y: 0, z: -20 }, true);
+  s.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+  s.vehicle.update({ ...NEUTRAL, ...input }, FIXED_DT);
+  return REAR.reduce((sum, i) => sum + Math.abs(s.vehicle.wheels[i].lateralForce), 0);
+}
+
+test('rear lateral grip returns gradually after the handbrake is released', (t) => {
+  // Parked cars: hold the handbrake, wait, then solve the same slide for all.
+  const parked = (heldSteps, releasedSteps) => {
+    const s = scene(t, TIRE);
+    s.run(SETTLE_STEPS);
+    s.run(heldSteps, { handbrake: true });
+    s.run(releasedSteps);
+    return s;
+  };
+  const freshCar = parked(0, 0);
+  const fresh = rearLateralAt(freshCar);
+  const held = rearLateralAt(parked(5, 0), { handbrake: true }) / fresh;
+  const waits = [0, 5, 15, 40, 120];
+  const cars = waits.map((steps) => parked(5, steps));
+  const released = cars.map((s) => rearLateralAt(s) / fresh);
+  t.diagnostic(
+    `rear lateral grip vs fresh: held ${held.toFixed(3)}, released after ` +
+      waits.map((steps, i) => `${steps} steps ${released[i].toFixed(3)}`).join(', '),
+  );
+
+  assert.ok(fresh > 1000, `fresh rear lateral force ${fresh}`);
+  assert.ok(held < 0.4, `held: ${held}`);
+  assert.ok(released[0] < 0.5, `no snap back on release: ${released[0]}`);
+  for (let i = 1; i < released.length; i++) {
+    assert.ok(released[i] > released[i - 1], `monotone recovery: ${released}`);
+  }
+  assert.ok(released[2] > released[0] + 0.1 && released[2] < 0.9, `0.25 s in: ${released[2]}`);
+  assert.ok(released[4] > 0.97 && released[4] <= 1 + 1e-6, `recovered after 2 s: ${released[4]}`);
+
+  // Only the rear's lateral grip recovers: the front is unaffected and the
+  // rear lock is off at once.
+  const justReleased = cars[0].vehicle.wheels;
+  for (const i of FRONT) {
+    const expected = freshCar.vehicle.wheels[i].lateralForce;
+    assert.ok(Math.abs(justReleased[i].lateralForce - expected) < 0.01 * Math.abs(expected), 'front grip');
+  }
+  for (const i of REAR) {
+    assert.ok(justReleased[i].longitudinalForce > -300, `no rear lock: ${justReleased[i].longitudinalForce}`);
+  }
+
+  // Throttle is not suppressed while the grip recovers.
+  const freshDriving = parked(0, 0);
+  const releasedDriving = parked(5, 0);
+  rearLateralAt(freshDriving, { throttle: 1 });
+  rearLateralAt(releasedDriving, { throttle: 1 });
+  for (const i of REAR) {
+    const expected = freshDriving.vehicle.wheels[i].longitudinalForce;
+    const actual = releasedDriving.vehicle.wheels[i].longitudinalForce;
+    assert.ok(expected > 1000, `fresh drive force ${expected}`);
+    assert.ok(actual >= 0.99 * expected, `drive force ${actual} vs ${expected} fresh`);
+  }
+});
+
+test('handbrake grip recovery depends on elapsed time, not on the step size', (t) => {
+  // update() without a world step only advances the vehicle's own state; the
+  // chassis does not move, and rearLateralAt() sets its velocities again.
+  const after = (steps, dt) => {
+    const s = scene(t, TIRE);
+    s.run(SETTLE_STEPS);
+    if (steps > 0) s.vehicle.update({ ...NEUTRAL, handbrake: true }, dt);
+    for (let i = 0; i < steps; i++) s.vehicle.update(NEUTRAL, dt);
+    return rearLateralAt(s);
+  };
+  const fresh = after(0, FIXED_DT);
+  const reference = after(30, 1 / 60); // 0.5 s in each case
+  const recovered = reference / fresh;
+  assert.ok(recovered > 0.5 && recovered < 0.95, `partly recovered after 0.5 s: ${recovered}`);
+  for (const [steps, dt] of [[60, 1 / 120], [15, 1 / 30]]) {
+    const actual = after(steps, dt);
+    assert.ok(
+      Math.abs(actual - reference) < 0.005 * reference,
+      `${steps} steps of ${dt} s: ${actual} vs ${reference}`,
+    );
+  }
+});
+
+test('reset and leaving the ground clear slip telemetry and handbrake grip recovery', (t) => {
+  const prepared = (handbrake, reset) => {
+    const s = scene(t, TIRE);
+    s.run(SETTLE_STEPS);
+    const settled = s.body.translation();
+    s.body.setLinvel(SLIDING, true);
+    s.vehicle.update({ ...NEUTRAL, handbrake }, FIXED_DT);
+    for (const wheel of s.vehicle.wheels) assert.ok(wheel.slipAngle > 0.1, 'sliding before reset');
+    if (reset) {
+      s.vehicle.reset();
+      for (const wheel of s.vehicle.wheels) {
+        assert.equal(wheel.slipAngle, 0);
+        assert.equal(wheel.slipSpeed, 0);
+        assert.equal(wheel.lateralForce, 0);
+      }
+      // Straight back onto its springs, so no recovery time passes.
+      s.body.setTranslation(settled, true);
+    }
+    return rearLateralAt(s);
+  };
+  const fresh = prepared(false, true);
+  const cleared = prepared(true, true);
+  const recovering = prepared(true, false);
+  assert.ok(Math.abs(cleared - fresh) < 1e-3 * fresh, `reset clears recovery: ${cleared} vs ${fresh}`);
+  assert.ok(recovering < 0.6 * fresh, `without reset it is still recovering: ${recovering} vs ${fresh}`);
+
+  // Moving sideways in the air is not a slip angle.
+  const airborne = scene(t, { ...TIRE, spawn: { x: 0, y: 2.5, z: 0 } });
+  airborne.body.setLinvel({ x: SLIDE_SIDE, y: 0, z: -SLIDE_FORWARD }, true);
+  airborne.run(30, { handbrake: true }, () => {
+    for (const wheel of airborne.vehicle.wheels) {
+      assert.equal(wheel.grounded, false);
+      assert.equal(wheel.slipAngle, 0);
+    }
+  });
+});
+
+test('a handbrake slide stays upright and settles after release and countersteer', (t) => {
+  // Default tuning. A scripted driver, so this checks that a slide can be
+  // entered and caught; it says nothing about how that feels.
+  const s = scene(t);
+  s.run(SETTLE_STEPS);
+  s.run(240, { throttle: 1 });
+  const entrySpeed = s.vehicle.forwardSpeed;
+
+  // Chassis sideslip in rad: positive = moving to the right of the nose.
+  const sideslip = () => {
+    const f = forwardOf(s.body);
+    const u = upOf(s.body);
+    const v = s.body.linvel();
+    const right = {
+      x: f.y * u.z - f.z * u.y,
+      y: f.z * u.x - f.x * u.z,
+      z: f.x * u.y - f.y * u.x,
+    };
+    return Math.atan2(
+      v.x * right.x + v.y * right.y + v.z * right.z,
+      v.x * f.x + v.y * f.y + v.z * f.z,
+    );
+  };
+
+  let peakSideslip = 0;
+  let peakRearSlipAngle = 0;
+  let minUp = 1;
+  const watch = () => {
+    peakSideslip = Math.max(peakSideslip, sideslip());
+    for (const i of REAR) {
+      peakRearSlipAngle = Math.max(peakRearSlipAngle, s.vehicle.wheels[i].slipAngle);
+    }
+    minUp = Math.min(minUp, upOf(s.body).y);
+    for (const value of motion(s.body)) assert.ok(Number.isFinite(value));
+  };
+
+  // Entry: turn in left and hold the handbrake; the tail steps out to the right.
+  s.run(45, { steer: -1, handbrake: true }, watch);
+  const releaseSideslip = sideslip();
+  const releaseYaw = s.body.angvel().y;
+
+  // Recovery: release, steer into the slide in proportion to the sideslip and
+  // the yaw rate, and feed in a little throttle.
+  for (let i = 0; i < 240; i++) {
+    const steer = Math.min(1, Math.max(-1, 2.5 * sideslip() + 0.5 * s.body.angvel().y));
+    s.run(1, { steer, throttle: 0.3 }, watch);
+  }
+  const endSideslip = sideslip();
+  const endYaw = s.body.angvel().y;
+  t.diagnostic(
+    `entry ${entrySpeed.toFixed(2)} m/s; at release sideslip ${releaseSideslip.toFixed(3)} rad, ` +
+      `yaw ${releaseYaw.toFixed(3)} rad/s; peak sideslip ${peakSideslip.toFixed(3)} rad, ` +
+      `peak rear slip angle ${peakRearSlipAngle.toFixed(3)} rad; after 4 s sideslip ` +
+      `${endSideslip.toFixed(3)} rad, yaw ${endYaw.toFixed(3)} rad/s, ` +
+      `speed ${s.vehicle.forwardSpeed.toFixed(2)} m/s, min up.y ${minUp.toFixed(4)}`,
+  );
+
+  assert.ok(entrySpeed > 10, `entry speed ${entrySpeed}`);
+  assert.ok(peakSideslip > 0.1, `the car really slides: ${peakSideslip}`);
+  assert.ok(peakSideslip < 1.0, `controlled drift stays below 57 degrees: ${peakSideslip}`);
+  assert.ok(
+    peakRearSlipAngle > VEHICLE.tirePeakSlipAngleRear,
+    `rear tires pass their peak angle: ${peakRearSlipAngle}`,
+  );
+  assert.ok(minUp > 0.9, `stays upright: ${minUp}`);
+  assert.ok(Math.abs(endSideslip) < 0.05, `sideslip recovered: ${endSideslip}`);
+  assert.ok(Math.abs(endYaw) < 0.2, `yaw settled: ${endYaw}`);
+  assert.ok(s.vehicle.forwardSpeed > entrySpeed * 0.5, `retains useful exit speed: ${s.vehicle.forwardSpeed}`);
+});

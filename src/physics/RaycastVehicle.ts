@@ -8,14 +8,19 @@
  *   2. A wheel whose ray hits gets a spring/damper force along the contact
  *      normal. That force is also the tire's normal load.
  *   3. Each grounded tire asks for a longitudinal force (rear-wheel drive,
- *      brakes, rolling drag) and a lateral force that cancels sideways slip at
- *      the contact point. The pair is scaled back onto a friction ellipse
- *      sized by the normal load, so tire forces are always bounded by grip.
+ *      brakes, rolling drag) and a lateral force that opposes sideways slip at
+ *      the contact point, following a slip-angle curve: it builds up to a
+ *      peak angle, then eases off towards a sliding level. The pair is scaled
+ *      back onto a friction ellipse sized by the normal load, so tire forces
+ *      are always bounded by grip.
  *   4. Everything is applied as one impulse at the contact point.
  *
  * A wheel with no contact produces no force at all, so there is no traction or
  * steering in the air. Nothing here sets velocities or positions directly
  * except reset(), and no rotation axis is locked.
+ *
+ * Wheels have no rotational state of their own, so there is no slip ratio and
+ * no wheelspin: longitudinal force is the requested force, limited by grip.
  *
  * Conventions: +Y up, local -Z forward, local +X right.
  * Wheel order: front-left, front-right, rear-left, rear-right.
@@ -42,7 +47,10 @@ export interface VehicleInput {
   brake: number;
   /** -1 = full left (A) .. +1 = full right (D). */
   steer: number;
-  /** Space. Brakes the rear wheels and cuts their lateral grip and drive. */
+  /**
+   * Space. Brakes the rear wheels and cuts their lateral grip and drive. On
+   * release the brake and drive cut end at once; the grip eases back.
+   */
   handbrake: boolean;
 }
 
@@ -71,6 +79,15 @@ export interface WheelState {
    * before this step's forces act. 0 in the air or with no load.
    */
   slipSpeed: number;
+  /**
+   * Slip angle in rad, within [-PI/2, PI/2]: the angle between the wheel's
+   * heading and the contact point's motion over the ground. Same sign as
+   * slipSpeed (positive = sliding to the wheel's right), also when rolling
+   * backwards. Measured against at least slipAngleMinSpeed of rolling speed,
+   * so it fades to 0 at a standstill. 0 in the air or with no load. Sideways
+   * slip only: not wheelspin or a slip ratio.
+   */
+  slipAngle: number;
 }
 
 interface Vec3 {
@@ -136,6 +153,17 @@ function taper(speedRatio: number): number {
   return Math.max(0, 1 - speedRatio * speedRatio);
 }
 
+/**
+ * Lateral force as a fraction of peak grip, for slipRatio = |slip angle| /
+ * peak slip angle (>= 0). Rises from 0 with slope 2, reaches 1 at slipRatio 1
+ * with a flat top, then falls smoothly towards slidingGrip. Continuous with a
+ * continuous slope, and always within [0, 1].
+ */
+function lateralGripCurve(slipRatio: number, slidingGrip: number): number {
+  const rise = (2 * slipRatio) / (1 + slipRatio * slipRatio);
+  return slipRatio <= 1 ? rise : slidingGrip + (1 - slidingGrip) * rise;
+}
+
 function restingWheel(restLength: number): WheelState {
   return {
     grounded: false,
@@ -147,6 +175,7 @@ function restingWheel(restLength: number): WheelState {
     longitudinalForce: 0,
     lateralForce: 0,
     slipSpeed: 0,
+    slipAngle: 0,
   };
 }
 
@@ -164,6 +193,11 @@ export class RaycastVehicle {
   private readonly wheelStates: WheelState[];
   /** Current front wheel angle in rad. Positive = left. */
   private steer = 0;
+  /**
+   * Rear lateral grip multiplier: handbrakeRearGripScale while the handbrake
+   * is held, easing back to 1 after it is released.
+   */
+  private rearGripScale = 1;
 
   constructor(rapier: RapierApi, world: RAPIER.World, tuning: VehicleTuning) {
     this.rapier = rapier;
@@ -274,11 +308,24 @@ export class RaycastVehicle {
     }
     if (input.handbrake) driveForce = 0; // locked rear wheels cannot drive
 
+    // Handbrake grip: cut at once while held. After release the missing grip
+    // decays exponentially, so the result depends on elapsed time only.
+    if (input.handbrake) {
+      this.rearGripScale = t.handbrakeRearGripScale;
+    } else if (t.handbrakeGripRecoveryTime > 0) {
+      this.rearGripScale =
+        1 - (1 - this.rearGripScale) * Math.exp(-dt / t.handbrakeGripRecoveryTime);
+    } else {
+      this.rearGripScale = 1;
+    }
+
     // --- Wheels --------------------------------------------------------------
     const rayLength = t.suspensionRestLength + t.wheelRadius;
     // Force that cancels slipResponse of 1 m/s of contact slip in one step,
-    // treating each wheel as carrying a quarter of the car.
+    // treating each wheel as carrying a quarter of the car. An upper bound
+    // that keeps the tires dissipative, not the tire's cornering stiffness.
     const slipForcePerSpeed = (t.slipResponse * (t.mass / WHEEL_COUNT)) / dt;
+    const slidingGrip = clamp(t.tireSlidingGrip, 0, 1);
 
     for (let i = 0; i < WHEEL_COUNT; i++) {
       const wheel = this.wheelStates[i];
@@ -305,6 +352,7 @@ export class RaycastVehicle {
         wheel.longitudinalForce = 0;
         wheel.lateralForce = 0;
         wheel.slipSpeed = 0;
+        wheel.slipAngle = 0;
         wheel.spinSpeed *= AIRBORNE_SPIN_KEEP;
         wheel.spinAngle += wheel.spinSpeed * dt;
         continue;
@@ -333,6 +381,7 @@ export class RaycastVehicle {
       let lateral = 0;
       let rollingSpeed = 0;
       let sideSpeed = 0;
+      let slipAngle = 0;
       let wheelForward = heading;
       let wheelRight = cross(heading, normal);
 
@@ -343,6 +392,10 @@ export class RaycastVehicle {
         const contactVelocity = velocityAt(contact);
         rollingSpeed = dot(contactVelocity, wheelForward);
         sideSpeed = dot(contactVelocity, wheelRight);
+        slipAngle = Math.atan2(
+          sideSpeed,
+          Math.max(Math.abs(rollingSpeed), t.slipAngleMinSpeed),
+        );
 
         // Requested forces, before the grip limit.
         const axleShare = isFront ? t.brakeFrontBias : 1 - t.brakeFrontBias;
@@ -353,18 +406,30 @@ export class RaycastVehicle {
           clamp(-rollingSpeed * slipForcePerSpeed, -brakeLimit, brakeLimit) -
           t.rollingDrag * rollingSpeed;
         if (!isFront) longitudinal += driveForce / 2;
-        lateral = -sideSpeed * slipForcePerSpeed;
 
-        // Combined grip: scale the pair back onto the friction ellipse.
         const maxLongitudinal = t.gripLongitudinal * load;
         const maxLateral =
-          (isFront ? t.gripLateralFront : t.gripLateralRear) *
-          (locked ? t.handbrakeRearGripScale : 1) *
-          load;
+          (isFront ? t.gripLateralFront : t.gripLateralRear * this.rearGripScale) * load;
+
+        // Lateral: the slip-angle curve sets the force (no dt in it). It is
+        // capped at the force that cancels slipResponse of the side slip in
+        // one step, which only bites at low speed or tiny slip and brings the
+        // force smoothly to zero at rest. Always opposes the slip, so it
+        // never feeds it. Never above maxLateral, so a saturated sideways
+        // demand cannot dilute brake/drive force in the ellipse below.
+        if (maxLateral > 0) {
+          const peakAngle = Math.max(
+            isFront ? t.tirePeakSlipAngleFront : t.tirePeakSlipAngleRear,
+            1e-6,
+          );
+          const curveForce =
+            maxLateral * lateralGripCurve(Math.abs(slipAngle) / peakAngle, slidingGrip);
+          lateral =
+            -Math.sign(sideSpeed) * Math.min(curveForce, Math.abs(sideSpeed) * slipForcePerSpeed);
+        }
+
+        // Combined grip: scale the pair back onto the friction ellipse.
         if (maxLongitudinal <= 0) longitudinal = 0;
-        // Saturated sideways demand must not dilute brake/drive force arbitrarily.
-        if (maxLateral <= 0) lateral = 0;
-        else lateral = clamp(lateral, -maxLateral, maxLateral);
         const usage = Math.hypot(
           maxLongitudinal > 0 ? longitudinal / maxLongitudinal : 0,
           maxLateral > 0 ? lateral / maxLateral : 0,
@@ -387,6 +452,7 @@ export class RaycastVehicle {
       wheel.longitudinalForce = longitudinal;
       wheel.lateralForce = lateral;
       wheel.slipSpeed = sideSpeed;
+      wheel.slipAngle = slipAngle;
       wheel.spinSpeed = locked ? 0 : rollingSpeed / t.wheelRadius;
       wheel.spinAngle += wheel.spinSpeed * dt;
     }
@@ -394,7 +460,8 @@ export class RaycastVehicle {
 
   /**
    * Puts the chassis back on its spawn, at rest and unrotated, and clears the
-   * steering and wheel state. Callers that interpolate poses must snap them.
+   * steering, handbrake grip recovery and wheel state. Callers that
+   * interpolate poses must snap them.
    */
   reset(): void {
     const { spawn } = this.tuning;
@@ -403,6 +470,7 @@ export class RaycastVehicle {
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.steer = 0;
+    this.rearGripScale = 1;
     for (const wheel of this.wheelStates) {
       Object.assign(wheel, restingWheel(this.tuning.suspensionRestLength));
     }

@@ -63,13 +63,33 @@ export interface VehicleTuning {
   // --- Tires -----------------------------------------------------------------
   /** Longitudinal friction coefficient (drive and brake). */
   gripLongitudinal: number;
-  /** Lateral friction coefficient, front wheels. */
+  /** Peak lateral friction coefficient, front wheels. */
   gripLateralFront: number;
-  /** Lateral friction coefficient, rear wheels (a bit higher = stable). */
+  /** Peak lateral friction coefficient, rear wheels (a bit higher = stable). */
   gripLateralRear: number;
   /**
-   * Fraction of a contact's slip velocity a tire tries to cancel per step,
-   * before the grip limit. Below 1 because the four tires act together.
+   * Slip angle at which a front tire's lateral force peaks, rad. Smaller =
+   * sharper response and an earlier breakaway. Must be above 0.
+   */
+  tirePeakSlipAngleFront: number;
+  /** Slip angle at which a rear tire's lateral force peaks, rad. Above 0. */
+  tirePeakSlipAngleRear: number;
+  /**
+   * Lateral force far beyond the peak slip angle, as a fraction of the peak
+   * force, 0..1. Keep it above 0 so a sliding tire still grips.
+   */
+  tireSlidingGrip: number;
+  /**
+   * Slip angles are measured against at least this rolling speed, m/s, so
+   * they fade to zero at a standstill instead of jumping to 90 degrees.
+   */
+  slipAngleMinSpeed: number;
+  /**
+   * Upper bound on tire forces: the fraction of a contact's slip velocity a
+   * tire may cancel per step. Below 1 because the four tires act together.
+   * It keeps the tires dissipative, limits the brakes near standstill and is
+   * the lateral response at low speed and tiny slip; the slip-angle curve
+   * takes over wherever it asks for less.
    */
   slipResponse: number;
   /** Rolling resistance per wheel, N per m/s of rolling speed. */
@@ -97,6 +117,12 @@ export interface VehicleTuning {
   handbrakeForce: number;
   /** Rear lateral grip multiplier while the handbrake is held, 0..1. */
   handbrakeRearGripScale: number;
+  /**
+   * Time constant in s with which rear lateral grip returns after the
+   * handbrake is released: about 63 % of the missing grip is back after this
+   * long, 95 % after three times as long. 0 = instantly.
+   */
+  handbrakeGripRecoveryTime: number;
 
   // --- Steering --------------------------------------------------------------
   /** Front wheel lock angle at standstill, rad. */
@@ -131,6 +157,11 @@ export const VEHICLE: VehicleTuning = {
   gripLongitudinal: 1.5,
   gripLateralFront: 1.05,
   gripLateralRear: 1.2,
+  // The next five tire/handbrake values are tuning hypotheses until driven.
+  tirePeakSlipAngleFront: 0.14,
+  tirePeakSlipAngleRear: 0.12,
+  tireSlidingGrip: 0.8,
+  slipAngleMinSpeed: 1,
   slipResponse: 0.45,
   rollingDrag: 6,
 
@@ -143,6 +174,7 @@ export const VEHICLE: VehicleTuning = {
   brakeFrontBias: 0.68,
   handbrakeForce: 6000,
   handbrakeRearGripScale: 0.35,
+  handbrakeGripRecoveryTime: 0.15,
 
   maxSteerAngle: 0.55,
   steerRate: 2.5,
