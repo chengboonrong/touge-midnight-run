@@ -1,6 +1,6 @@
 /**
  * Temporary, original synthesized SFX: oscillators plus one generated noise
- * buffer. No samples and no music. Owns one AudioContext, created on the first
+ * buffer plus streamed original synth music. Owns one AudioContext, created on the first
  * user gesture. The node graph is built once; per frame only AudioParams move.
  */
 import {
@@ -9,6 +9,9 @@ import {
 } from './audioMath';
 import type { AudioPrefs, EngineLike, WheelLike } from './audioMath';
 import { AutomationThrottle, ContextGate, targetChanged } from './audioState';
+import { MusicManager } from './MusicManager';
+import { DEFAULT_MUSIC_STATE, musicLevel, parseMusicState, parseMusicVolume, parseMusicVolumePref } from './musicState';
+import type { MusicState } from './musicState';
 
 const STORAGE_KEY = 'touge.audio';
 /** Idle, low, mid, high layers: pitch multiple of the firing frequency, waveform, level. */
@@ -20,6 +23,8 @@ export type AudioStatus = 'locked' | 'unavailable' | 'suspended' | 'muted' | 'pl
 
 interface Graph {
   ctx: AudioContext;
+  /** Shared compressor mix bus; music joins here, after the SFX master gain. */
+  bus: DynamicsCompressorNode;
   master: GainNode;
   engineGain: GainNode;
   engineFilter: BiquadFilterNode;
@@ -108,21 +113,26 @@ function buildGraph(ctx: AudioContext): Graph {
   const fxFilter = filter('lowpass', 300, 0.7, fxGain);
   noise(fxFilter, 1.5);
 
-  return { ctx, master, engineGain, engineFilter, oscillators, layerGains, tireGain, tireFilter, roadGain, windGain, fxGain, fxFilter, sources, nodes };
+  return { ctx, bus: compressor, master, engineGain, engineFilter, oscillators, layerGains, tireGain, tireFilter, roadGain, windGain, fxGain, fxFilter, sources, nodes };
 }
 
-function loadPrefs(): AudioPrefs {
+/** volume = SFX, muted = mute all (older SFX-only data keeps its values), musicVolume = music. */
+type Prefs = AudioPrefs & { musicVolume: number };
+
+function loadPrefs(): Prefs {
+  let raw: string | null = null;
   try {
-    return parseAudioPrefs(localStorage.getItem(STORAGE_KEY));
+    raw = localStorage.getItem(STORAGE_KEY);
   } catch {
-    return parseAudioPrefs(null);
+    raw = null;
   }
+  return { ...parseAudioPrefs(raw), musicVolume: parseMusicVolumePref(raw) };
 }
 
 export class GameAudio {
   private readonly win: Window;
   private readonly page: Document;
-  private readonly prefs: AudioPrefs = loadPrefs();
+  private readonly prefs: Prefs = loadPrefs();
   private readonly layers = [0, 0, 0, 0];
   private graph: Graph | null = null;
   private paused = false;
@@ -134,6 +144,8 @@ export class GameAudio {
   private disposed = false;
   private lastGear = 0;
   private lastHandbrake = false;
+  private music: MusicManager | null = null;
+  private musicState: MusicState = DEFAULT_MUSIC_STATE;
 
   constructor(win: Window, page: Document) {
     this.win = win;
@@ -150,6 +162,18 @@ export class GameAudio {
 
   get volume(): number { return this.prefs.volume; }
   get muted(): boolean { return this.prefs.muted; }
+  get musicVolume(): number { return this.prefs.musicVolume; }
+
+  setMusicVolume(value: number): void {
+    this.prefs.musicVolume = parseMusicVolume(value);
+    this.save();
+  }
+
+  /** Stored before unlock; crossfades once the graph exists and the game is audible. */
+  setMusicState(state: MusicState): void {
+    this.musicState = parseMusicState(state);
+    this.music?.setState(this.musicState);
+  }
 
   /** locked = no gesture yet; suspended = paused or hidden; muted = running but silent. */
   get status(): AudioStatus {
@@ -157,7 +181,7 @@ export class GameAudio {
     if (this.failed) return 'unavailable';
     if (!this.graph) return 'locked';
     if (this.paused || this.page.visibilityState !== 'visible' || this.graph.ctx.state !== 'running') return 'suspended';
-    return masterLevel(this.prefs) > 0 ? 'playing' : 'muted';
+    return masterLevel(this.prefs) > 0 || musicLevel(this.prefs.musicVolume, this.prefs.muted) > 0 ? 'playing' : 'muted';
   }
 
   setVolume(value: number): void {
@@ -227,6 +251,8 @@ export class GameAudio {
     this.win.removeEventListener('pageshow', this.apply);
     this.win.removeEventListener('pagehide', this.onPageHide);
     this.page.removeEventListener('visibilitychange', this.apply);
+    this.music?.dispose();
+    this.music = null;
     const g = this.graph;
     this.graph = null;
     this.gate = null;
@@ -284,6 +310,11 @@ export class GameAudio {
         this.graph = buildGraph(ctx);
         this.gate = new ContextGate(ctx, changed => { if (changed) this.apply(); else this.publish(); });
         ctx.onstatechange = this.apply;
+        try {
+          this.music = new MusicManager(ctx, this.graph.bus, this.musicState, musicLevel(this.prefs.musicVolume, this.prefs.muted));
+        } catch {
+          this.music = null; // No media element support: effects only.
+        }
       } catch {
         this.failed = true;
         ctx?.close().catch(() => undefined);
@@ -312,6 +343,8 @@ export class GameAudio {
     if (want) g.master.gain.setTargetAtTime(masterLevel(this.prefs), now, 0.04);
     else g.master.gain.setValueAtTime(0, now);
     this.gate?.sync(want, gesture);
+    this.music?.setLevel(musicLevel(this.prefs.musicVolume, this.prefs.muted));
+    this.music?.setActive(want);
     this.publish();
   }
 }

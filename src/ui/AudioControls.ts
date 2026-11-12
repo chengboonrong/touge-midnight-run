@@ -1,4 +1,4 @@
-/** SFX volume and mute controls for the OPTIONS panel. There is no music, so no music controls. */
+/** SFX volume, music volume and mute-all controls for the OPTIONS panel. */
 import type { GameAudio } from '../audio/GameAudio';
 
 export function addAudioControls(page: Document, panel: HTMLElement, audio: GameAudio): void {
@@ -17,9 +17,24 @@ export function addAudioControls(page: Document, panel: HTMLElement, audio: Game
   });
   label.append('SFX VOLUME', slider);
 
+  const musicLabel = page.createElement('label');
+  const music = page.createElement('input');
+  music.type = 'range';
+  music.min = '0';
+  music.max = '100';
+  music.step = '5';
+  music.value = String(Math.round(audio.musicVolume * 100));
+  const describeMusic = (): void => music.setAttribute('aria-valuetext', `${music.value}%`);
+  describeMusic();
+  music.addEventListener('input', () => {
+    audio.setMusicVolume(Number(music.value) / 100);
+    describeMusic();
+  });
+  musicLabel.append('MUSIC VOLUME', music);
+
   const mute = page.createElement('button');
   mute.type = 'button';
-  mute.textContent = 'MUTE SFX';
+  mute.textContent = 'MUTE ALL';
   mute.setAttribute('aria-pressed', String(audio.muted));
   mute.addEventListener('click', () => {
     audio.setMuted(!audio.muted);
@@ -28,6 +43,6 @@ export function addAudioControls(page: Document, panel: HTMLElement, audio: Game
 
   const note = page.createElement('p');
   note.className = 'options__note';
-  note.textContent = 'PLACEHOLDER SYNTH SFX. NO MUSIC YET.';
-  panel.append(label, mute, note);
+  note.textContent = 'ORIGINAL SYNTH SCORE / SYNTH SFX. TEMPORARY.';
+  panel.append(label, musicLabel, mute, note);
 }

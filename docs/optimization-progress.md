@@ -168,3 +168,39 @@ against actual WASM; subjective shake/sound and bfcache remain manual checks.
 API$0.87; cumulative$46.00; remaining$54.00 under the expanded$100 ceiling.
 Next: original generated playable synth music and four-state manager, followed
 by an actual race loop/HUD, bounded visual effects and final profiling.
+
+Browser follow-up: W then W+D into the actual pass guardrail produced two
+contact-feedback callbacks during the drive, with the last strength0.2144.
+Audio graph counts stayed fixed; local/public consoles had no warnings/errors.
+Cloudflare TOUGE URL is https://fossil-confident-improving-subjects.trycloudflare.com/
+(the other existing tunnel on8787 belongs to another game and was not changed).
+
+## Phase 4a — generated playable original synth score
+
+Files: MusicManager, musicState, GameAudio, AudioControls, two test files,
+`tools/audio/build_music.py`, docs/MUSIC.md and fourMP3s+manifest. Existing
+practice uses the race score; four states are available for the upcoming race
+loop. Two owned streaming elements/sources/gains feed the existing compressor.
+Music has independent saved volume; MUTE ALL preserves older SFX preferences.
+No external samples or downloads. Original algorithmic notes/arrangements and
+synthesis were created with Claude API assistance and dedicated CC0. Temporary
+synth instrumentation; no production-recording or professional-composer claim.
+
+Host ran the actual Python generator and ffmpeg. All four MP3s decode at44.1k
+mono160kbps: menu24.615s/494KB, prepare12.308s/248KB, race49.231s/986KB,
+results12.308s/248KB. Actual peak levels -3.09..-3.22dBFS; RMS -15.22..-18.10dBFS.
+Host corrected the unsupported144kbps draft to160 before encoding. Source PCM
+wraps tails; compressed-media loop seams still need human listening.
+
+Music rules/preferences/planner tests were red before implementation;141 game
+tests, typecheck and build passed. Host added an asset presence/signature/
+duration/license/distinctness regression (142 total). Browser decoded and played
+all four tracks. Race->results old element paused after fade; live MUTE ALL
+reached RMS=0, including a transition. Node counts remain2media sources,
+12gains,1compressor,5filters,4oscillators,4noise sources. No new AudioContext.
+Host fixed immediate mute across both slots and partial-construction cleanup.
+
+API$1.54; cumulative$47.54, remaining$52.46. A focused follow-up is validating
+slow incoming loads and stale play promises before race integration. Track
+listening, mix judgment, actual iOS activation and loop-seam comfort remain
+manual checks. The existing Vite large-bundle warning remains.
