@@ -14,6 +14,12 @@ import { loadPassAsset } from './render/loadPassAsset';
 import { GameAudio } from './audio/GameAudio';
 import { addAudioControls } from './ui/AudioControls';
 import { Hud } from './ui/Hud';
+import { RaceHud } from './ui/RaceHud';
+import { DriftScore } from './race/DriftScore';
+import { RACE_MUSIC, RaceSession } from './race/RaceSession';
+import type { RaceState } from './race/RaceSession';
+import { browserStorage, courseKey, loadBestLap, saveBestLap } from './race/RaceRecords';
+import { RaceMarkers } from './world/RaceMarkers';
 import { Options, loadQuality } from './ui/Options';
 import { TouchControls } from './ui/TouchControls';
 import { addPassColliders, readRoute } from './world/MountainPass';
@@ -108,16 +114,90 @@ async function bootstrap(): Promise<void> {
   const chase = new ChaseCamera(camera, CHASE_CAMERA);
   let snapCamera = true;
 
+  // Time attack: free practice is the default; a timed run starts from the OPTIONS menu.
+  const recordStore = browserStorage();
+  const bestKey = courseKey('kurotake', route.length, route.points.length);
+  const race = new RaceSession(route.points, route.width, VEHICLE.spawn, loadBestLap(recordStore, bestKey));
+  const drift = new DriftScore();
+  const raceHud = new RaceHud(document);
+  const markers = new RaceMarkers(scene, race.gates, route.width);
+  const SESSION_LABEL: Record<RaceState, string> = {
+    practice: 'NIGHT PRACTICE / 01', countdown: 'COUNTDOWN / 01', racing: 'TIME ATTACK / 01', finished: 'RESULTS / 01',
+  };
+  let shownState: RaceState | null = null;
+  /** Drains race events to HUD, audio and storage, then mirrors a state change to music and the session label. */
+  const pump = (): void => {
+    for (const event of race.drainEvents()) {
+      raceHud.handleEvent(event);
+      switch (event.type) {
+        case 'countdown': audio.raceCue('countdown'); break;
+        case 'go': audio.raceCue('go'); break;
+        case 'checkpoint': audio.raceCue(event.delta !== null && event.delta < 0 ? 'improved' : 'checkpoint'); break;
+        case 'finish': drift.stop(); audio.raceCue(event.personalBest ? 'personalBest' : 'finish'); break;
+        case 'personalBest': saveBestLap(recordStore, bestKey, race.best); break;
+        default: break;
+      }
+    }
+    if (race.state !== shownState) {
+      shownState = race.state;
+      audio.setMusicState(RACE_MUSIC[shownState]);
+      hud.setSessionLabel(SESSION_LABEL[shownState]);
+    }
+  };
+  const resetRun = (): void => { car.reset(); snapCamera = true; impacts.reset(); drift.reset(); };
+  /** R or FREE PRACTICE: drops the current lap, keeps the best. Held keys are left as they are. */
+  const toPractice = (): void => {
+    resetRun();
+    race.cancel(vehicle.body.translation());
+    pump();
+  };
+  const menuButton = (text: string, onClick: () => void): HTMLButtonElement => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = text;
+    button.style.minHeight = '48px';
+    button.addEventListener('click', onClick);
+    return button;
+  };
+  options.panel.prepend(
+    menuButton('START TIME ATTACK', () => {
+      input.clearAll();
+      touch?.clear();
+      resetRun();
+      options.root.open = false;
+      // The toggle event arrives later; unpause now so the first countdown beep is scheduled, not dropped.
+      audio.setPaused(false);
+      race.start(vehicle.body.translation());
+      pump();
+    }),
+    menuButton('FREE PRACTICE', () => {
+      input.clearAll();
+      touch?.clear();
+      toPractice();
+      options.root.open = false;
+    }),
+  );
+  pump();
+
   document.body.dataset.ready = 'true';
   const loop = new GameLoop({
     fixedUpdate: dt => {
       // Paused: no forces and no world step. Both interpolation endpoints become the current pose.
       if (options.isOpen) { input.clearAll(); car.savePreviousPose(); return; }
-      controls.throttle = input.isHeld('KeyW') ? 1 : 0;
-      controls.brake = input.isHeld('KeyS') ? 1 : 0;
-      controls.steer = Number(input.isHeld('KeyD')) - Number(input.isHeld('KeyA'));
-      controls.handbrake = input.isHeld('Space');
-      if (input.consumeReset()) { car.reset(); snapCamera = true; impacts.reset(); }
+      if (input.consumeReset()) toPractice();
+      const phase = race.state;
+      if (phase === 'practice' || phase === 'racing') {
+        controls.throttle = input.isHeld('KeyW') ? 1 : 0;
+        controls.brake = input.isHeld('KeyS') ? 1 : 0;
+        controls.steer = Number(input.isHeld('KeyD')) - Number(input.isHeld('KeyA'));
+        controls.handbrake = input.isHeld('Space');
+      } else {
+        // Countdown: neutral while the world still steps. Finished: foot brake to a stop without engaging reverse.
+        controls.throttle = 0;
+        controls.steer = 0;
+        controls.handbrake = false;
+        controls.brake = phase === 'finished' && vehicle.forwardSpeed > 0.5 ? 1 : 0;
+      }
       car.savePreviousPose();
       vehicle.update(controls, dt);
       impacts.step(dt);
@@ -127,6 +207,25 @@ async function bootstrap(): Promise<void> {
         queue.drainContactForceEvents(onContactForce);
       } else physics.step();
       car.readPhysicsPose();
+      race.update(dt, vehicle.body.translation());
+      const after = race.state;
+      if (after === 'practice' || after === 'racing') {
+        // Chassis-local velocity: forward is local -Z, right is local +X.
+        const q = vehicle.body.rotation(), v = vehicle.body.linvel();
+        const forward = -(v.x * 2 * (q.x * q.z + q.w * q.y) + v.y * 2 * (q.y * q.z - q.w * q.x) + v.z * (1 - 2 * (q.x * q.x + q.y * q.y)));
+        const side = v.x * (1 - 2 * (q.y * q.y + q.z * q.z)) + v.y * 2 * (q.x * q.y + q.w * q.z) + v.z * 2 * (q.x * q.z - q.w * q.y);
+        const wheels = vehicle.wheels;
+        let loaded = 0, rearSlip = 0;
+        for (let i = 0; i < wheels.length; i++) {
+          const wheel = wheels[i]!;
+          if (!wheel.grounded || !(wheel.load > 100)) continue;
+          loaded++;
+          // Assumes wheel order FL, FR, RL, RR.
+          if (i >= 2) rearSlip = Math.max(rearSlip, Math.abs(wheel.slipSpeed));
+        }
+        drift.update(dt, forward, side, loaded, rearSlip);
+      }
+      pump();
     },
     render: (alpha, frameDt) => {
       car.render(alpha);
@@ -146,6 +245,8 @@ async function bootstrap(): Promise<void> {
         Math.atan2(chase.forward.x, -chase.forward.z), controls.handbrake, vehicle.forwardSpeed < -0.5, vehicle.engine);
       audio.update(vehicle.engine, vehicle.wheels, Math.hypot(velocity.x, velocity.z),
         vehicle.engine.gear < 0 ? controls.brake : controls.throttle, controls.handbrake);
+      raceHud.render(race, drift, frameDt, options.isOpen);
+      markers.update(race.state, race.checkpoint);
     },
   }, { fixedHz: PHYSICS_HZ });
   loop.start();

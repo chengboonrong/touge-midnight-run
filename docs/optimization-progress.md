@@ -266,3 +266,22 @@ RaceMarkers is a small host-written visual-only gate/board class with shared
 geometry, explicit disposal and no shadows; typechecked pending visual review.
 API$1.25; cumulative$51.48, remaining$48.52. Main wiring and saved records are
 being added next; no driving forces or existing controls were changed.
+
+## Phase 5c — live race integration and records
+
+Files: main, RaceRecords, Hud session label, AudioControls credit, GameAudio
+suspended-context cue scheduling, six record tests and phase5c integration doc.
+Time Attack/Practice actions in Options preserveWASD/Space/R and clear both
+input sources across menu/reset. Physics runs neutral during countdown and
+brakes after finish without reverse. Race clock/score freeze in Options; actual
+loaded rear slip drives scoring. Records are scoped/validated and a faster
+stored record is not overwritten. Read the integration doc for full proof.
+
+All178 tests, typecheck/build pass. Browser verified3/2/1/GO scheduling, neutral
+countdown underW, exact22.68s pause, R, and three touch breakpoints. A normal-force
+autonomous driver completed a valid70.166s physical lap, all three checkpoints,
+PB save, finish braking, zero off-road time. GPU counts plateaued across laps;
+short moving sample114.65FPS. Physical phone and subjective driving/audio remain
+manual checks, not inferred from the bot. API$0.87; cumulative$52.35, remaining
+$47.65. A separate smoke/skid draft costs$1.95 (cumulative$54.30), still awaiting
+its tests/implementation/browser verification at this point.

@@ -43,6 +43,6 @@ export function addAudioControls(page: Document, panel: HTMLElement, audio: Game
 
   const note = page.createElement('p');
   note.className = 'options__note';
-  note.textContent = 'ORIGINAL SYNTH SCORE / SYNTH SFX. TEMPORARY.';
+  note.textContent = 'ORIGINAL SYNTH SCORE / SYNTH SFX';
   panel.append(label, musicLabel, mute, note);
 }

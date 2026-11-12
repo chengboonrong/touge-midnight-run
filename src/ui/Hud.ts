@@ -14,6 +14,7 @@ export class Hud {
   private readonly scale: number;
   private readonly offsetX: number;
   private readonly offsetZ: number;
+  private readonly session: HTMLElement;
   private lastUpdate = -Infinity;
 
   constructor(route: readonly MapPoint[], lengthMeters: number) {
@@ -48,6 +49,7 @@ export class Hud {
     this.gear = this.root.querySelector('.speedometer__gear')!;
     this.rpm = this.root.querySelector('.speedometer__rpm')!;
     this.rev = this.root.querySelector('.speedometer__rev')!;
+    this.session = this.root.querySelector('.route__session')!;
     this.root.querySelector('.route__length')!.textContent = `${(lengthMeters / 1000).toFixed(2)} KM`;
     const context = this.root.querySelector('canvas')!.getContext('2d');
     if (!context) throw Error('Cannot create route map');
@@ -59,6 +61,11 @@ export class Hud {
     this.scale = 136 / Math.max(maxX - minX, maxZ - minZ, 1);
     this.offsetX = 88 - ((minX + maxX) / 2) * this.scale;
     this.offsetZ = 88 - ((minZ + maxZ) / 2) * this.scale;
+  }
+
+  /** Session line under the route map. Call only when it changes. */
+  setSessionLabel(text: string): void {
+    this.session.textContent = text;
   }
 
   update(kmh: number, position: MapPoint, heading: number, handbrake: boolean, reverse: boolean,

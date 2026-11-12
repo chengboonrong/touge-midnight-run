@@ -256,7 +256,9 @@ export class GameAudio {
   /** A short race tone sequence on the preallocated cue voice, replacing any earlier cue. Event-driven; silent while locked, paused, hidden or muted. */
   raceCue(kind: RaceCueKind): void {
     const g = this.graph;
-    if (!g || this.paused || this.page.visibilityState !== 'visible' || g.ctx.state !== 'running' || !(masterLevel(this.prefs) > 0)) return;
+    // A suspended or interrupted context still accepts AudioParam schedules and plays them on resume, so the first
+    // countdown beep survives the asynchronous unpause. Pause/hide clear the cue; a later cue replaces a late one.
+    if (!g || this.paused || this.page.visibilityState !== 'visible' || g.ctx.state === 'closed' || !(masterLevel(this.prefs) > 0)) return;
     const now = g.ctx.currentTime;
     const gain = g.cueGain.gain;
     this.clearCue(g, now);
