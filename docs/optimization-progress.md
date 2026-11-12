@@ -112,3 +112,23 @@ slip, not unimplemented wheelspin/longitudinal lockup. No collisions/countdowns/
 race cues without actual event systems. No audio assets or music integration yet.
 API$1.30; cumulative$44.30; remaining$5.70. The reserved$5 is now being used for
 lifecycle race and long-session automation checks/fixes and final optimization.
+
+## Phase 3b — audio lifecycle and scheduling fixes
+
+Files: GameAudio, new import-free audioState, five async/throttle regressions.
+Pending resume no longer blocks later user activation. Pausing during a pending
+resume still suspends; late resolutions cannot override current desired state.
+Rejected or synchronous state operations do not throw or spin. Closed contexts
+are ignored. Continuous targets are bounded near30Hz and skip negligible changes;
+actual gear/handbrake edges remain unthrottled. No per-frame node allocation.
+
+Tests applied first failed for missing helper. Then119 game tests, typecheck and
+build pass. Real browser Escape-first -> W produced a running context,33km/h
+and nonzero RMS. Graph node counts remain fixed. Mute reaches RMS=0 and survives
+reload. Volume slider works with keyboard and is saved. Hidden/menu states
+suspend and unpause resumes. Human mix/pitch smoothness and physical-phone
+activation remain manual validation. No long-duration heap-leak claim.
+
+API$0.83; cumulative$45.13; remaining$4.87. Remaining funds go to actual contact
+feedback and final regression/performance review. Music, race events, smoke and
+skids are still pending, rather than represented by dummy UI.

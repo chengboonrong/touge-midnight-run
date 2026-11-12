@@ -8,6 +8,7 @@ import {
   parseAudioPrefs, parseVolume, roadLevel, rpmFraction, tireLevel, windLevel,
 } from './audioMath';
 import type { AudioPrefs, EngineLike, WheelLike } from './audioMath';
+import { AutomationThrottle, ContextGate, targetChanged } from './audioState';
 
 const STORAGE_KEY = 'touge.audio';
 /** Idle, low, mid, high layers: pitch multiple of the firing frequency, waveform, level. */
@@ -125,7 +126,10 @@ export class GameAudio {
   private readonly layers = [0, 0, 0, 0];
   private graph: Graph | null = null;
   private paused = false;
-  private busy = false;
+  private gate: ContextGate | null = null;
+  private readonly throttle = new AutomationThrottle();
+  /** Last scheduled target per continuous param slot; NaN until first scheduled. */
+  private readonly targets = new Float64Array(14).fill(NaN);
   private failed = false;
   private disposed = false;
   private lastGear = 0;
@@ -181,21 +185,26 @@ export class GameAudio {
     const g = this.graph;
     if (!g || this.paused || g.ctx.state !== 'running') return;
     const t = g.ctx.currentTime;
-    const fraction = rpmFraction(engine.rpm, engine.idleRpm, engine.redlineRpm);
-    const frequency = engineFrequency(engine.rpm);
-    engineLayers(fraction, this.layers);
-    for (let i = 0; i < g.oscillators.length; i++) {
-      g.oscillators[i]?.frequency.setTargetAtTime(frequency * (LAYER_MULT[i] ?? 1), t, 0.03);
-      g.layerGains[i]?.gain.setTargetAtTime((this.layers[i] ?? 0) * (LAYER_LEVEL[i] ?? 0), t, 0.06);
+    // Continuous targets: at most ~30 Hz and only when they moved. Shift/handbrake thumps below are never throttled.
+    if (this.throttle.due(t)) {
+      const fraction = rpmFraction(engine.rpm, engine.idleRpm, engine.redlineRpm);
+      const frequency = engineFrequency(engine.rpm);
+      engineLayers(fraction, this.layers);
+      for (let i = 0; i < g.oscillators.length; i++) {
+        const osc = g.oscillators[i];
+        const layer = g.layerGains[i];
+        if (osc) this.aim(i, osc.frequency, frequency * (LAYER_MULT[i] ?? 1), t, 0.03);
+        if (layer) this.aim(4 + i, layer.gain, (this.layers[i] ?? 0) * (LAYER_LEVEL[i] ?? 0), t, 0.06);
+      }
+      const level = engineLevel(fraction, throttle, engine.shifting, engine.limiting);
+      this.aim(8, g.engineGain.gain, 0.5 * level, t, 0.08);
+      this.aim(9, g.engineFilter.frequency, 400 + 3200 * fraction * level, t, 0.08);
+      const tire = tireLevel(wheels);
+      this.aim(10, g.tireGain.gain, 0.3 * tire, t, 0.06);
+      this.aim(11, g.tireFilter.frequency, 900 + 500 * tire, t, 0.1);
+      this.aim(12, g.roadGain.gain, 0.3 * roadLevel(speed, groundedFraction(wheels)), t, 0.1);
+      this.aim(13, g.windGain.gain, 0.18 * windLevel(speed), t, 0.2);
     }
-    const level = engineLevel(fraction, throttle, engine.shifting, engine.limiting);
-    g.engineGain.gain.setTargetAtTime(0.5 * level, t, 0.08);
-    g.engineFilter.frequency.setTargetAtTime(400 + 3200 * fraction * level, t, 0.08);
-    const tire = tireLevel(wheels);
-    g.tireGain.gain.setTargetAtTime(0.3 * tire, t, 0.06);
-    g.tireFilter.frequency.setTargetAtTime(900 + 500 * tire, t, 0.1);
-    g.roadGain.gain.setTargetAtTime(0.3 * roadLevel(speed, groundedFraction(wheels)), t, 0.1);
-    g.windGain.gain.setTargetAtTime(0.18 * windLevel(speed), t, 0.2);
     if (shifted) this.thump(g, t, 260, 0.35);
     else if (handEdge) this.thump(g, t, handbrake ? 700 : 400, handbrake ? 0.3 : 0.12);
   }
@@ -212,6 +221,7 @@ export class GameAudio {
     this.page.removeEventListener('visibilitychange', this.apply);
     const g = this.graph;
     this.graph = null;
+    this.gate = null;
     if (g) {
       g.ctx.onstatechange = null;
       for (const source of g.sources) {
@@ -221,6 +231,13 @@ export class GameAudio {
       g.ctx.close().catch(() => undefined);
     }
     this.publish();
+  }
+
+  /** Schedules a smoothed target only when it is finite and differs from the last one scheduled for this slot. */
+  private aim(slot: number, param: AudioParam, value: number, t: number, timeConstant: number): void {
+    if (!targetChanged(this.targets[slot] ?? NaN, value)) return;
+    this.targets[slot] = value;
+    param.setTargetAtTime(value, t, timeConstant);
   }
 
   /** A short filtered noise burst on the preallocated fx path. */
@@ -250,20 +267,22 @@ export class GameAudio {
   };
 
   /** Any user gesture: build the graph once, then try to reach the wanted state. */
-  private readonly unlock = (): void => {
+  private readonly unlock = (event?: Event): void => {
     if (this.disposed) return;
     if (!this.graph && !this.failed) {
       let ctx: AudioContext | null = null;
       try {
         ctx = new AudioContext();
         this.graph = buildGraph(ctx);
+        this.gate = new ContextGate(ctx, changed => { if (changed) this.apply(); else this.publish(); });
         ctx.onstatechange = this.apply;
       } catch {
         this.failed = true;
         ctx?.close().catch(() => undefined);
       }
     }
-    this.apply();
+    // Held-key repeats are not fresh gestures; they must not stack resume() calls.
+    this.sync(!(event && (event as KeyboardEvent).repeat === true));
   };
 
   /**
@@ -272,7 +291,10 @@ export class GameAudio {
    * frame. Master is zero whenever paused or hidden, so a resume that lands
    * after a pause is silent and is suspended again when it settles.
    */
-  private readonly apply = (): void => {
+  private readonly apply = (): void => this.sync(false);
+
+  /** gesture = called from a real input event, which may retry a resume that is still pending. */
+  private sync(gesture: boolean): void {
     const g = this.graph;
     if (!g || this.disposed) { this.publish(); return; }
     const ctx = g.ctx;
@@ -281,22 +303,7 @@ export class GameAudio {
     g.master.gain.cancelScheduledValues(now);
     if (want) g.master.gain.setTargetAtTime(masterLevel(this.prefs), now, 0.04);
     else g.master.gain.setValueAtTime(0, now);
-    if (!this.busy) {
-      const before = ctx.state;
-      const change = want && before === 'suspended' ? ctx.resume()
-        : !want && before === 'running' ? ctx.suspend() : null;
-      if (change) {
-        this.busy = true;
-        change.then(() => {
-          this.busy = false;
-          if (!this.disposed && ctx.state !== before) this.apply();
-        }, () => {
-          // Rejected (for example no user activation yet): the next gesture or toggle retries.
-          this.busy = false;
-          this.publish();
-        });
-      }
-    }
+    this.gate?.sync(want, gesture);
     this.publish();
-  };
+  }
 }
