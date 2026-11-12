@@ -285,3 +285,33 @@ short moving sample114.65FPS. Physical phone and subjective driving/audio remain
 manual checks, not inferred from the bot. API$0.87; cumulative$52.35, remaining
 $47.65. A separate smoke/skid draft costs$1.95 (cumulative$54.30), still awaiting
 its tests/implementation/browser verification at this point.
+
+## Phase 6a — slip-driven smoke and persistent skid marks
+
+Files: vehicle contact telemetry, EFFECTS tuning, DrivingEffects, main and two
+new test files. Actual ray-hit points/normals are reused, finite and zero when
+not loaded/grounded/reset; no force expression changed. Rear slip/load/speed
+control emission. One bounded smoke Points pool (High96/Low24) and one bounded
+skid ribbon ring (768/256 segments) reuse their buffers. Reset clears history/
+smoke and retains existing marks; quality changes clear visual pools/marks.
+No long streak to spawn or emission in the air/rest. Particle interpolation
+stays smooth between fixed steps; paused rendering holds its latest endpoint.
+
+Tests were red before implementation. All189 tests, typecheck/build pass,
+including actual Rapier contact order/location,20s high/low buffer bounds,
+reset/dispose,30/60/120Hz emission counts (30/30/30), interpolation and live
+quality limits. Host added finite-dt protection, test cleanup and a quality-
+switch regression. A first real handbrake screenshot made10puffs/33segments and
+21degree drift score, with no shader errors. Initial bead-like smoke was tuned
+to softer irregular clouds and High88/Low32 pixel bounds, preserving Low budget.
+Later real slides produced32puffs/~72segments with no console errors.
+
+The first-use profile exposed a67.3ms callback/66.6ms frame despite113.5average
+FPS. Host verified Three0.169 compileAsync traverses invisible materials, then
+awaited it before ready/loop startup. Follow-up first-drift120-frame sample:
+119.96FPS, frame p95 9.1ms/max10.3ms, callback p95 1.0ms/max3.3ms. GPU program
+creation stayed17->17 during the drift (compilation moved into loading). This is
+one measured local sequence, not a universal benchmark. Startup does more work.
+Human smoke/mix judgment, physical phone and long heap profiling remain manual.
+API draft$1.95; cumulative$54.30, remaining$45.70. Manga/near-miss draft then cost
+$1.52 (cumulative$55.82) and is awaiting its own tests and real-trimesh checks.

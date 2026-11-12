@@ -273,3 +273,49 @@ export const CHASE_CAMERA = {
   /** Speed at which the field of view reaches fovMax, m/s. */
   fovSpeed: 50,
 } as const;
+
+/** Tuning for render/DrivingEffects.ts: tire smoke and skid marks from the rear wheels. */
+export const EFFECTS = {
+  /** Sideways contact slip from which a loaded tire smokes and marks, m/s. */
+  minSlipSpeed: 2.5,
+  /** Horizontal chassis speed below which nothing is emitted, m/s. */
+  minPlanarSpeed: 5,
+  /** A wheel counts as loaded above this suspension force, N. */
+  minLoad: 100,
+  /** Slip speed at which smoke emission reaches its full rate, m/s. */
+  fullSlipSpeed: 10,
+  smoke: {
+    /** Pool size, particle life in s, and particles per second per wheel at full slip. */
+    high: { capacity: 96, life: 1.1, rate: 30 },
+    low: { capacity: 24, life: 0.7, rate: 12 },
+    /** Peak opacity of one puff. */
+    alpha: 0.2,
+    /** Upper bound on a puff's size in drawing-buffer pixels. */
+    maxPointPx: { high: 88, low: 32 },
+    color: 0x9aa3a8,
+    /** Exponential slow-down of a puff's velocity, 1/s. */
+    drag: 2.2,
+    /** Constant upward drift, m/s. */
+    rise: 0.7,
+    /** Share of the chassis velocity a new puff starts with. */
+    inheritVelocity: 0.3,
+    /** Deterministic spawn scatter, m (position) and 2x m/s (velocity). */
+    jitter: 0.25,
+    /** Spawn height above the contact point along the ground normal, m. */
+    height: 0.12,
+  },
+  skid: {
+    /** Ring size in quad segments. */
+    segments: { high: 768, low: 256 },
+    /** Strip width, m. */
+    width: 0.2,
+    /** Offset above the ground along the contact normal, m. */
+    lift: 0.012,
+    /** Contact travel per segment, m. */
+    minSegment: 0.2,
+    /** A contact that moved further than this in one step starts a new strip, m. */
+    maxJump: 2,
+    alpha: 0.4,
+    color: 0x050505,
+  },
+} as const;

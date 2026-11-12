@@ -9,6 +9,7 @@ import { ImpactFeedback, impactThresholdForce } from './physics/ImpactFeedback';
 import { PhysicsWorld } from './physics/PhysicsWorld';
 import { RaycastVehicle, type VehicleInput } from './physics/RaycastVehicle';
 import { ChaseCamera } from './render/ChaseCamera';
+import { DrivingEffects } from './render/DrivingEffects';
 import { createScene } from './render/SceneSetup';
 import { loadPassAsset } from './render/loadPassAsset';
 import { GameAudio } from './audio/GameAudio';
@@ -53,6 +54,8 @@ async function bootstrap(): Promise<void> {
   addPassColliders(pass.scene, physics.world);
   const vehicle = new RaycastVehicle(RAPIER, physics.world, VEHICLE);
   const car = new Car(vehicle, coupe.scene);
+  // Tire smoke and skid marks. Null after a real unload, so the loop must use `effects?.`.
+  let effects: DrivingEffects | null = new DrivingEffects(scene, vehicle, initialQuality);
   // Collision feedback: contact-force events on the chassis collider only, drained every fixed step.
   const vehicleCollider = vehicle.collider;
   vehicleCollider.setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS);
@@ -68,6 +71,8 @@ async function bootstrap(): Promise<void> {
     if (event.persisted) return;
     contactEvents?.free();
     contactEvents = null;
+    effects?.dispose();
+    effects = null;
   });
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   scene.add(car.root);
@@ -103,7 +108,10 @@ async function bootstrap(): Promise<void> {
   }
   const audio = new GameAudio(window, document);
   // Opening and closing both drop every hold, so nothing stays stuck across the pause.
-  const options = new Options(document, initialQuality, setQuality, open => {
+  const options = new Options(document, initialQuality, quality => {
+    setQuality(quality);
+    effects?.setQuality(quality);
+  }, open => {
     input.clearAll();
     touch?.clear();
     touch?.setDisabled(open);
@@ -144,7 +152,7 @@ async function bootstrap(): Promise<void> {
       hud.setSessionLabel(SESSION_LABEL[shownState]);
     }
   };
-  const resetRun = (): void => { car.reset(); snapCamera = true; impacts.reset(); drift.reset(); };
+  const resetRun = (): void => { car.reset(); snapCamera = true; impacts.reset(); drift.reset(); effects?.reset(); };
   /** R or FREE PRACTICE: drops the current lap, keeps the best. Held keys are left as they are. */
   const toPractice = (): void => {
     resetRun();
@@ -179,6 +187,9 @@ async function bootstrap(): Promise<void> {
   );
   pump();
 
+  // Compile even currently invisible smoke/skid materials before the first driving frame.
+  await renderer.compileAsync(scene, camera);
+
   document.body.dataset.ready = 'true';
   const loop = new GameLoop({
     fixedUpdate: dt => {
@@ -207,6 +218,7 @@ async function bootstrap(): Promise<void> {
         queue.drainContactForceEvents(onContactForce);
       } else physics.step();
       car.readPhysicsPose();
+      effects?.fixedUpdate(dt);
       race.update(dt, vehicle.body.translation());
       const after = race.state;
       if (after === 'practice' || after === 'racing') {
@@ -240,6 +252,7 @@ async function bootstrap(): Promise<void> {
       const braking = controls.brake > 0 || controls.handbrake;
       brakeLight.intensity = braking ? 1.2 : 0.35;
       for (const material of tailMaterials) material.emissiveIntensity = braking ? 2.8 : 0.8;
+      effects?.render(options.isOpen ? 1 : alpha, renderer.domElement.height);
       renderer.render(scene, camera);
       hud.update(Math.hypot(velocity.x, velocity.z) * 3.6, car.root.position,
         Math.atan2(chase.forward.x, -chase.forward.z), controls.handbrake, vehicle.forwardSpeed < -0.5, vehicle.engine);

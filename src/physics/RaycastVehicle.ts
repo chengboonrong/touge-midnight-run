@@ -88,6 +88,17 @@ export interface WheelState {
    * slip only: not wheelspin or a slip ratio.
    */
   slipAngle: number;
+  /**
+   * World-space point where the suspension ray actually hit, from the latest
+   * update(). Telemetry only. Valid only while grounded with load > 0;
+   * otherwise (0, 0, 0). The object is owned by the vehicle and reused.
+   */
+  contactPoint: Vec3;
+  /**
+   * World-space ground normal at that hit. Same validity as contactPoint:
+   * (0, 0, 0) in the air, with no load, and after reset().
+   */
+  contactNormal: Vec3;
 }
 
 interface Vec3 {
@@ -134,6 +145,13 @@ const scale = (a: Vec3, s: number): Vec3 => ({ x: a.x * s, y: a.y * s, z: a.z * 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
 
+/** Writes into an existing vector, so telemetry never allocates per step. */
+function setVec(target: Vec3, x: number, y: number, z: number): void {
+  target.x = x;
+  target.y = y;
+  target.z = z;
+}
+
 /** Rotates v by the unit quaternion q. */
 function rotate(q: Quat, v: Vec3): Vec3 {
   // v' = v + w * t + u x t, with u = (q.x, q.y, q.z) and t = 2 * (u x v).
@@ -176,6 +194,8 @@ function restingWheel(restLength: number): WheelState {
     lateralForce: 0,
     slipSpeed: 0,
     slipAngle: 0,
+    contactPoint: { x: 0, y: 0, z: 0 },
+    contactNormal: { x: 0, y: 0, z: 0 },
   };
 }
 
@@ -495,6 +515,8 @@ export class RaycastVehicle {
         wheel.lateralForce = 0;
         wheel.slipSpeed = 0;
         wheel.slipAngle = 0;
+        setVec(wheel.contactPoint, 0, 0, 0);
+        setVec(wheel.contactNormal, 0, 0, 0);
         wheel.spinSpeed *= AIRBORNE_SPIN_KEEP;
         wheel.spinAngle += wheel.spinSpeed * dt;
         continue;
@@ -595,6 +617,14 @@ export class RaycastVehicle {
       wheel.lateralForce = lateral;
       wheel.slipSpeed = sideSpeed;
       wheel.slipAngle = slipAngle;
+      // Telemetry only: the actual ray hit, valid while this wheel carries load.
+      if (load > 0) {
+        setVec(wheel.contactPoint, contact.x, contact.y, contact.z);
+        setVec(wheel.contactNormal, normal.x, normal.y, normal.z);
+      } else {
+        setVec(wheel.contactPoint, 0, 0, 0);
+        setVec(wheel.contactNormal, 0, 0, 0);
+      }
       wheel.spinSpeed = locked ? 0 : rollingSpeed / t.wheelRadius;
       wheel.spinAngle += wheel.spinSpeed * dt;
     }
@@ -615,7 +645,13 @@ export class RaycastVehicle {
     this.rearGripScale = 1;
     this.powertrain.reset();
     for (const wheel of this.wheelStates) {
+      // Keep the wheel's own contact vectors: callers may hold on to them.
+      const { contactPoint, contactNormal } = wheel;
       Object.assign(wheel, restingWheel(this.tuning.suspensionRestLength));
+      setVec(contactPoint, 0, 0, 0);
+      setVec(contactNormal, 0, 0, 0);
+      wheel.contactPoint = contactPoint;
+      wheel.contactNormal = contactNormal;
     }
   }
 }
