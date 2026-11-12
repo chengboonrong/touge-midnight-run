@@ -1,0 +1,163 @@
+/**
+ * Shared simulation constants and tuning.
+ *
+ * Tuning for systems that do not exist yet (track, HUD, production camera) is
+ * added with those systems.
+ *
+ * This file has no imports on purpose: the Node tests transpile it standalone.
+ *
+ * Conventions used everywhere: +Y is up, a vehicle's local -Z is forward and
+ * its local +X is right. Units are SI (m, kg, s, N, rad).
+ */
+
+/** Fixed simulation rate in Hz. The game loop and Rapier must agree on it. */
+export const PHYSICS_HZ = 60;
+
+/** Fixed simulation step in seconds. */
+export const FIXED_DT = 1 / PHYSICS_HZ;
+
+/** World gravity in m/s^2. */
+export const GRAVITY = { x: 0, y: -9.81, z: 0 } as const;
+
+/** Tuning for physics/RaycastVehicle.ts (and the placeholder car mesh). */
+export interface VehicleTuning {
+  // --- Chassis ---------------------------------------------------------------
+  /** Chassis mass in kg. The centre of mass is the centre of the chassis box. */
+  mass: number;
+  /** Half extents of the chassis box collider. */
+  chassisHalfExtents: { x: number; y: number; z: number };
+  /** Rapier linear damping: a little speed-proportional drag. */
+  linearDamping: number;
+  /** Rapier angular damping: calms yaw, pitch and roll. */
+  angularDamping: number;
+  /**
+   * Chassis origin at spawn/reset, unrotated. Keep it high enough that the
+   * suspension rays do not reach the ground yet, so the car drops onto its
+   * springs instead of starting compressed.
+   */
+  spawn: { x: number; y: number; z: number };
+
+  // --- Wheel layout (chassis-local) -----------------------------------------
+  wheelRadius: number;
+  /** Visual only. */
+  wheelWidth: number;
+  /** Lateral distance from the centre line to each wheel. */
+  halfTrack: number;
+  /** Local z of the front axle (negative: forward is -Z). */
+  frontAxleZ: number;
+  /** Local z of the rear axle. */
+  rearAxleZ: number;
+  /** Local y of the suspension mounts, where the rays start. */
+  suspensionMountY: number;
+
+  // --- Suspension ------------------------------------------------------------
+  /** Mount to wheel-centre distance with the spring unloaded. */
+  suspensionRestLength: number;
+  /** Spring rate per wheel, N/m. */
+  suspensionStiffness: number;
+  /** Damper rate per wheel, N*s/m. */
+  suspensionDamping: number;
+  /** Upper bound on one wheel's suspension force, N. */
+  suspensionMaxForce: number;
+
+  // --- Tires -----------------------------------------------------------------
+  /** Longitudinal friction coefficient (drive and brake). */
+  gripLongitudinal: number;
+  /** Lateral friction coefficient, front wheels. */
+  gripLateralFront: number;
+  /** Lateral friction coefficient, rear wheels (a bit higher = stable). */
+  gripLateralRear: number;
+  /**
+   * Fraction of a contact's slip velocity a tire tries to cancel per step,
+   * before the grip limit. Below 1 because the four tires act together.
+   */
+  slipResponse: number;
+  /** Rolling resistance per wheel, N per m/s of rolling speed. */
+  rollingDrag: number;
+
+  // --- Drive and brakes ------------------------------------------------------
+  /** Peak drive force on the rear axle, N. */
+  engineForce: number;
+  /** Forward speed at which the drive force has tapered to zero, m/s. */
+  topSpeed: number;
+  /** Peak reverse drive force on the rear axle, N. */
+  reverseForce: number;
+  /** Reverse speed at which the reverse force has tapered to zero, m/s. */
+  reverseTopSpeed: number;
+  /**
+   * Below this speed against the pedal's direction, the pedal drives instead
+   * of braking (S: brake -> reverse, W: brake -> forward), m/s.
+   */
+  directionChangeSpeed: number;
+  /** Peak foot-brake force over all four wheels, N. */
+  brakeForce: number;
+  /** Share of the foot-brake force on the front axle, 0..1. */
+  brakeFrontBias: number;
+  /** Peak handbrake force on the rear axle, N. */
+  handbrakeForce: number;
+  /** Rear lateral grip multiplier while the handbrake is held, 0..1. */
+  handbrakeRearGripScale: number;
+
+  // --- Steering --------------------------------------------------------------
+  /** Front wheel lock angle at standstill, rad. */
+  maxSteerAngle: number;
+  /** How fast the front wheels turn towards the requested angle, rad/s. */
+  steerRate: number;
+  /** Speed at which the lock angle has shrunk to highSpeedSteerScale, m/s. */
+  steerSpeedRef: number;
+  /** Lock angle multiplier at and above steerSpeedRef, 0..1. */
+  highSpeedSteerScale: number;
+}
+
+export const VEHICLE: VehicleTuning = {
+  mass: 1200,
+  chassisHalfExtents: { x: 0.96, y: 0.3, z: 2.0 },
+  linearDamping: 0.02,
+  angularDamping: 0.5,
+  spawn: { x: -2.25, y: 0.8, z: 0 },
+
+  wheelRadius: 0.33,
+  wheelWidth: 0.22,
+  halfTrack: 0.86,
+  frontAxleZ: -1.25,
+  rearAxleZ: 1.25,
+  suspensionMountY: 0,
+
+  suspensionRestLength: 0.3,
+  suspensionStiffness: 26000,
+  suspensionDamping: 3000,
+  suspensionMaxForce: 20000,
+
+  gripLongitudinal: 1.5,
+  gripLateralFront: 1.05,
+  gripLateralRear: 1.2,
+  slipResponse: 0.45,
+  rollingDrag: 6,
+
+  engineForce: 6500,
+  topSpeed: 50,
+  reverseForce: 4000,
+  reverseTopSpeed: 10,
+  directionChangeSpeed: 0.5,
+  brakeForce: 12000,
+  brakeFrontBias: 0.68,
+  handbrakeForce: 6000,
+  handbrakeRearGripScale: 0.35,
+
+  maxSteerAngle: 0.55,
+  steerRate: 2.5,
+  steerSpeedRef: 40,
+  highSpeedSteerScale: 0.2,
+};
+
+/** Temporary follow camera in main.ts (replaced by a camera module later). */
+export const CHASE_CAMERA = {
+  /** Horizontal distance behind the car, m. */
+  distance: 7.5,
+  /** Height above the car's origin, m. */
+  height: 3,
+  /** Height above the car's origin that the camera looks at, m. */
+  lookHeight: 0.8,
+  /** Follow sharpness, 1/s. Higher = tighter. */
+  stiffness: 5,
+} as const;

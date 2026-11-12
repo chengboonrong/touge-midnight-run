@@ -1,0 +1,166 @@
+{
+  "asset": "coupe",
+  "seed": 7713,
+  "blender_version": "5.2.3 LTS",
+  "glb": "/Users/chrischeng/ai-agent-workflow/touge-midnight-run/public/assets/touge/coupe.glb",
+  "blend": "/Users/chrischeng/ai-agent-workflow/touge-midnight-run/art/touge/coupe.blend",
+  "renders": [
+    "/Users/chrischeng/ai-agent-workflow/touge-midnight-run/art/touge/coupe_front34.png",
+    "/Users/chrischeng/ai-agent-workflow/touge-midnight-run/art/touge/coupe_rear34.png"
+  ],
+  "render_skipped": false,
+  "axes": {
+    "blender": "+X right, +Y forward, +Z up",
+    "gltf": "+Y up, forward -Z"
+  },
+  "root": "CAR_ROOT (identity, physics centre of mass)",
+  "wheel_pivots_blender": {
+    "Wheel_FL": [
+      -0.86,
+      1.25,
+      0.0
+    ],
+    "Wheel_FR": [
+      0.86,
+      1.25,
+      0.0
+    ],
+    "Wheel_RL": [
+      -0.86,
+      -1.25,
+      0.0
+    ],
+    "Wheel_RR": [
+      0.86,
+      -1.25,
+      0.0
+    ]
+  },
+  "wheel_radius": 0.33,
+  "wheel_width": 0.22,
+  "arch_centre_z": -0.18,
+  "collider_half_extents_blender_xyz": [
+    0.96,
+    2.0,
+    0.3
+  ],
+  "visual_body_half_width": 1.0,
+  "roof_z": 0.757,
+  "preview_pose_only": {
+    "root_z": 0.524,
+    "wheel_z": -0.19
+  },
+  "warnings": [],
+  "mesh_count": 13,
+  "triangle_count": 32946,
+  "material_count": 10,
+  "materials": [
+    "Alloy",
+    "Amber",
+    "Black",
+    "Glass",
+    "Graphite",
+    "HeadLens",
+    "Paint",
+    "Plate",
+    "Rubber",
+    "TailLamp"
+  ],
+  "meshes": {
+    "Body_Alloy": {
+      "triangles": 192,
+      "vertices": 120,
+      "materials": [
+        "Alloy"
+      ]
+    },
+    "Body_Amber": {
+      "triangles": 216,
+      "vertices": 112,
+      "materials": [
+        "Amber"
+      ]
+    },
+    "Body_Black": {
+      "triangles": 3128,
+      "vertices": 2052,
+      "materials": [
+        "Black"
+      ]
+    },
+    "Body_Glass": {
+      "triangles": 24,
+      "vertices": 36,
+      "materials": [
+        "Glass"
+      ]
+    },
+    "Body_Graphite": {
+      "triangles": 3552,
+      "vertices": 1927,
+      "materials": [
+        "Graphite"
+      ]
+    },
+    "Body_HeadLens": {
+      "triangles": 216,
+      "vertices": 112,
+      "materials": [
+        "HeadLens"
+      ]
+    },
+    "Body_Paint": {
+      "triangles": 5278,
+      "vertices": 2833,
+      "materials": [
+        "Paint"
+      ]
+    },
+    "Body_Plate": {
+      "triangles": 44,
+      "vertices": 24,
+      "materials": [
+        "Plate"
+      ]
+    },
+    "Body_TailLamp": {
+      "triangles": 216,
+      "vertices": 112,
+      "materials": [
+        "TailLamp"
+      ]
+    },
+    "Wheel_FL_Mesh": {
+      "triangles": 5020,
+      "vertices": 2648,
+      "materials": [
+        "Alloy",
+        "Rubber"
+      ]
+    },
+    "Wheel_FR_Mesh": {
+      "triangles": 5020,
+      "vertices": 2648,
+      "materials": [
+        "Alloy",
+        "Rubber"
+      ]
+    },
+    "Wheel_RL_Mesh": {
+      "triangles": 5020,
+      "vertices": 2648,
+      "materials": [
+        "Alloy",
+        "Rubber"
+      ]
+    },
+    "Wheel_RR_Mesh": {
+      "triangles": 5020,
+      "vertices": 2648,
+      "materials": [
+        "Alloy",
+        "Rubber"
+      ]
+    }
+  }
+}
