@@ -436,3 +436,153 @@ test('rendered car interpolates poses and reset snaps both ends of the blend', (
     assert.ok(Math.abs(car.root.quaternion.w - 1) < 1e-6);
   }
 });
+
+// --- Phase 1a: longitudinal force while sliding (D1), slip telemetry (D3) ----
+
+const SLIDE_FORWARD = 15; // m/s along -Z (the unrotated car's forward)
+const SLIDE_SIDE = 6; // m/s along +X (the unrotated car's right)
+const STRAIGHT = { x: 0, y: 0, z: -SLIDE_FORWARD };
+const SLIDING = { x: SLIDE_SIDE, y: 0, z: -SLIDE_FORWARD };
+
+/** Settles a car, gives it a velocity and solves one update() (no world step). */
+function solveAt(t, velocity, input = {}, tuningOverrides = {}) {
+  const s = scene(t, tuningOverrides);
+  s.run(SETTLE_STEPS);
+  s.body.setLinvel(velocity, true);
+  s.vehicle.update({ ...NEUTRAL, ...input }, FIXED_DT);
+  return s;
+}
+
+/** Each axis within its own grip, and the pair inside the friction ellipse. */
+function assertWithinEllipse(s, rearLateralScale = 1) {
+  s.vehicle.wheels.forEach((wheel, i) => {
+    assert.equal(wheel.grounded, true);
+    const maxLongitudinal = VEHICLE.gripLongitudinal * wheel.load;
+    const maxLateral =
+      (FRONT.includes(i) ? VEHICLE.gripLateralFront : VEHICLE.gripLateralRear * rearLateralScale) *
+      wheel.load;
+    assert.ok(maxLongitudinal > 0, `wheel ${i} is loaded`);
+    if (maxLateral === 0) assert.equal(Math.abs(wheel.lateralForce), 0);
+    const usage = Math.hypot(
+      wheel.longitudinalForce / maxLongitudinal,
+      maxLateral > 0 ? wheel.lateralForce / maxLateral : 0,
+    );
+    assert.ok(usage <= 1 + 1e-9, `wheel ${i} grip usage ${usage}`);
+  });
+}
+
+const forces = (s, key) => s.vehicle.wheels.map((wheel) => wheel[key].toFixed(1)).join(', ');
+
+test('the foot brake keeps useful longitudinal force while sliding sideways', (t) => {
+  // Reference: the same brake request with no side slip, i.e. what the brakes
+  // and longitudinal grip allow on their own.
+  const straight = solveAt(t, STRAIGHT, { brake: 1 });
+  const sliding = solveAt(t, SLIDING, { brake: 1 });
+  t.diagnostic(`brake longitudinal N, straight: ${forces(straight, 'longitudinalForce')}`);
+  t.diagnostic(`brake longitudinal N, sliding:  ${forces(sliding, 'longitudinalForce')}`);
+
+  for (let i = 0; i < 4; i++) {
+    const reference = straight.vehicle.wheels[i].longitudinalForce;
+    const actual = sliding.vehicle.wheels[i].longitudinalForce;
+    assert.ok(reference < -1000, `wheel ${i} brakes in a straight line: ${reference}`);
+    assert.ok(actual <= 0.5 * reference, `wheel ${i} brakes ${actual} N vs ${reference} N straight`);
+  }
+  assertWithinEllipse(straight);
+  assertWithinEllipse(sliding);
+});
+
+test('rear-wheel throttle keeps useful drive force while sliding sideways', (t) => {
+  const straight = solveAt(t, STRAIGHT, { throttle: 1 });
+  const sliding = solveAt(t, SLIDING, { throttle: 1 });
+  t.diagnostic(`drive longitudinal N, straight: ${forces(straight, 'longitudinalForce')}`);
+  t.diagnostic(`drive longitudinal N, sliding:  ${forces(sliding, 'longitudinalForce')}`);
+
+  for (const i of REAR) {
+    const reference = straight.vehicle.wheels[i].longitudinalForce;
+    const actual = sliding.vehicle.wheels[i].longitudinalForce;
+    assert.ok(reference > 1000, `wheel ${i} drives in a straight line: ${reference}`);
+    assert.ok(actual >= 0.5 * reference, `wheel ${i} drives ${actual} N vs ${reference} N straight`);
+  }
+  assertWithinEllipse(sliding);
+
+  // Holding the handbrake still cuts the drive: locked rear wheels only brake.
+  const held = solveAt(t, SLIDING, { throttle: 1, handbrake: true });
+  for (const i of REAR) {
+    assert.ok(held.vehicle.wheels[i].longitudinalForce < 0, 'no drive with the handbrake held');
+  }
+  assertWithinEllipse(held, VEHICLE.handbrakeRearGripScale);
+});
+
+test('combined tire force stays on the friction ellipse with zero rear lateral grip', (t) => {
+  const s = solveAt(t, SLIDING, { brake: 1, handbrake: true }, { handbrakeRearGripScale: 0 });
+  assertWithinEllipse(s, 0);
+  for (const i of REAR) {
+    assert.ok(s.vehicle.wheels[i].longitudinalForce < -1000, 'rear wheels still brake');
+  }
+});
+
+test('slipSpeed is the signed contact side speed in the wheel frame', (t) => {
+  const near = (actual, expected, label) =>
+    assert.ok(Math.abs(actual - expected) < 0.05, `${label}: ${actual} vs ${expected}`);
+
+  // Sliding towards the car's right is positive, towards its left negative.
+  for (const side of [SLIDE_SIDE, -SLIDE_SIDE]) {
+    const s = solveAt(t, { x: side, y: 0, z: -SLIDE_FORWARD });
+    s.vehicle.wheels.forEach((wheel, i) => near(wheel.slipSpeed, side, `wheel ${i}`));
+  }
+
+  // Rolling straight ahead is no side slip.
+  const straight = solveAt(t, STRAIGHT);
+  straight.vehicle.wheels.forEach((wheel, i) => near(wheel.slipSpeed, 0, `straight wheel ${i}`));
+
+  // Pure yaw to the left (about +Y): the nose sweeps left, the tail right.
+  // Rigid-body kinematics give a side speed of yawRate * axleZ at each axle.
+  const yawRate = 1;
+  const spinning = scene(t);
+  spinning.run(SETTLE_STEPS);
+  spinning.body.setAngvel({ x: 0, y: yawRate, z: 0 }, true);
+  spinning.vehicle.update(NEUTRAL, FIXED_DT);
+  for (const i of FRONT) {
+    near(spinning.vehicle.wheels[i].slipSpeed, yawRate * VEHICLE.frontAxleZ, `front wheel ${i}`);
+  }
+  for (const i of REAR) {
+    near(spinning.vehicle.wheels[i].slipSpeed, yawRate * VEHICLE.rearAxleZ, `rear wheel ${i}`);
+  }
+});
+
+test('slipSpeed stays finite in a handbrake slide and is zero airborne and after reset', (t) => {
+  // The same slide as the handbrake test above, sampled every step.
+  const slide = (handbrake) => {
+    const s = scene(t);
+    s.run(SETTLE_STEPS);
+    s.body.setLinvel({ x: SLIDE_SIDE, y: 0, z: 0 }, true);
+    s.run(15, { handbrake }, () => {
+      for (const wheel of s.vehicle.wheels) assert.ok(Number.isFinite(wheel.slipSpeed));
+    });
+    return s;
+  };
+  const gripped = slide(false);
+  const loose = slide(true);
+  for (const [label, s] of [['no handbrake', gripped], ['handbrake', loose]]) {
+    t.diagnostic(
+      `slide after 15 steps, ${label}: yaw ${s.body.angvel().y.toFixed(4)} rad/s, ` +
+        `side speed ${s.body.linvel().x.toFixed(4)} m/s, slipSpeed ${forces(s, 'slipSpeed')}`,
+    );
+  }
+  for (const i of REAR) {
+    assert.ok(loose.vehicle.wheels[i].slipSpeed > 1, 'the rear is still sliding to the right');
+  }
+
+  loose.vehicle.reset();
+  for (const wheel of loose.vehicle.wheels) assert.equal(wheel.slipSpeed, 0);
+
+  // Moving sideways in the air is not tire slip.
+  const airborne = scene(t, { spawn: { x: 0, y: 2.5, z: 0 } });
+  airborne.body.setLinvel({ x: SLIDE_SIDE, y: 0, z: 0 }, true);
+  airborne.run(30, {}, () => {
+    for (const wheel of airborne.vehicle.wheels) {
+      assert.equal(wheel.grounded, false);
+      assert.equal(wheel.slipSpeed, 0);
+    }
+  });
+});

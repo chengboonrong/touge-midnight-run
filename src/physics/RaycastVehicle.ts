@@ -64,6 +64,13 @@ export interface WheelState {
   longitudinalForce: number;
   /** Tire force along the wheel's right in N. */
   lateralForce: number;
+  /**
+   * Sideways speed of the contact point over the ground in m/s, measured
+   * along the wheel's right in the contact plane (the steered wheel's right
+   * for the front wheels). Positive = sliding to the wheel's right. Taken
+   * before this step's forces act. 0 in the air or with no load.
+   */
+  slipSpeed: number;
 }
 
 interface Vec3 {
@@ -139,6 +146,7 @@ function restingWheel(restLength: number): WheelState {
     load: 0,
     longitudinalForce: 0,
     lateralForce: 0,
+    slipSpeed: 0,
   };
 }
 
@@ -296,6 +304,7 @@ export class RaycastVehicle {
         wheel.load = 0;
         wheel.longitudinalForce = 0;
         wheel.lateralForce = 0;
+        wheel.slipSpeed = 0;
         wheel.spinSpeed *= AIRBORNE_SPIN_KEEP;
         wheel.spinAngle += wheel.spinSpeed * dt;
         continue;
@@ -323,6 +332,7 @@ export class RaycastVehicle {
       let longitudinal = 0;
       let lateral = 0;
       let rollingSpeed = 0;
+      let sideSpeed = 0;
       let wheelForward = heading;
       let wheelRight = cross(heading, normal);
 
@@ -332,7 +342,7 @@ export class RaycastVehicle {
 
         const contactVelocity = velocityAt(contact);
         rollingSpeed = dot(contactVelocity, wheelForward);
-        const sideSpeed = dot(contactVelocity, wheelRight);
+        sideSpeed = dot(contactVelocity, wheelRight);
 
         // Requested forces, before the grip limit.
         const axleShare = isFront ? t.brakeFrontBias : 1 - t.brakeFrontBias;
@@ -352,7 +362,9 @@ export class RaycastVehicle {
           (locked ? t.handbrakeRearGripScale : 1) *
           load;
         if (maxLongitudinal <= 0) longitudinal = 0;
+        // Saturated sideways demand must not dilute brake/drive force arbitrarily.
         if (maxLateral <= 0) lateral = 0;
+        else lateral = clamp(lateral, -maxLateral, maxLateral);
         const usage = Math.hypot(
           maxLongitudinal > 0 ? longitudinal / maxLongitudinal : 0,
           maxLateral > 0 ? lateral / maxLateral : 0,
@@ -374,6 +386,7 @@ export class RaycastVehicle {
       wheel.load = load;
       wheel.longitudinalForce = longitudinal;
       wheel.lateralForce = lateral;
+      wheel.slipSpeed = sideSpeed;
       wheel.spinSpeed = locked ? 0 : rollingSpeed / t.wheelRadius;
       wheel.spinAngle += wheel.spinSpeed * dt;
     }
