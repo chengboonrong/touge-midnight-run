@@ -89,3 +89,26 @@ and subjective camera comfort remain manual checks.
 API costs: broad camera proposal hit its output limit ($1.83; no code applied),
 focused camera $0.75, quality/options $0.82. Cumulative$43.00, remaining$7.00.
 Next: temporary synthesized engine/tire audio, then reserved validation/fixes.
+
+## Phase 3a — temporary synthesized vehicle audio
+
+Files: `src/audio/{GameAudio,audioMath}.ts`, `src/ui/AudioControls.ts`, main,
+styles and `test/audioMath.test.mjs`. Four crossfading RPM oscillator layers,
+actual loaded lateral-slip tire noise, grounded rolling noise, speed wind and
+preallocated shift/handbrake transients. Compressor and master headroom. No
+copyrighted samples, music files or production-recording claim. Gesture unlock,
+menu/hidden suspension, saved validated mute/volume, and graph disposal are owned.
+
+Host corrected test location/syntax and invalid-idle-RPM handling caught by the
+new regression. All114 tests, typecheck/build pass at this increment. Browser:
+no context before gesture; W produced running audio and55km/h/5778RPM. Actual
+post-compressor analyser peak<0.094 during this short sample. Opening Options
+suspended the context. Node creation counts stayed1compressor/10gains/5filters/
+4oscillators/4noise sources, including gear/handbrake feedback. A suspended
+analyser retains its last samples; its nonzero cached RMS is not output sound.
+
+The sound needs human listening/mix calibration. Tire effects measure lateral
+slip, not unimplemented wheelspin/longitudinal lockup. No collisions/countdowns/
+race cues without actual event systems. No audio assets or music integration yet.
+API$1.30; cumulative$44.30; remaining$5.70. The reserved$5 is now being used for
+lifecycle race and long-session automation checks/fixes and final optimization.

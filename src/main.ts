@@ -10,6 +10,8 @@ import { RaycastVehicle, type VehicleInput } from './physics/RaycastVehicle';
 import { ChaseCamera } from './render/ChaseCamera';
 import { createScene } from './render/SceneSetup';
 import { loadPassAsset } from './render/loadPassAsset';
+import { GameAudio } from './audio/GameAudio';
+import { addAudioControls } from './ui/AudioControls';
 import { Hud } from './ui/Hud';
 import { Options, loadQuality } from './ui/Options';
 import { TouchControls } from './ui/TouchControls';
@@ -75,12 +77,15 @@ async function bootstrap(): Promise<void> {
     document.body.dataset.touch = 'true';
     touch = new TouchControls(input, document, window);
   }
+  const audio = new GameAudio(window, document);
   // Opening and closing both drop every hold, so nothing stays stuck across the pause.
   const options = new Options(document, initialQuality, setQuality, open => {
     input.clearAll();
     touch?.clear();
     touch?.setDisabled(open);
+    audio.setPaused(open);
   });
+  addAudioControls(document, options.panel, audio);
   const controls: VehicleInput = { throttle: 0, brake: 0, steer: 0, handbrake: false };
   const chase = new ChaseCamera(camera, CHASE_CAMERA);
   let snapCamera = true;
@@ -111,6 +116,8 @@ async function bootstrap(): Promise<void> {
       renderer.render(scene, camera);
       hud.update(Math.hypot(velocity.x, velocity.z) * 3.6, car.root.position,
         Math.atan2(chase.forward.x, -chase.forward.z), controls.handbrake, vehicle.forwardSpeed < -0.5, vehicle.engine);
+      audio.update(vehicle.engine, vehicle.wheels, Math.hypot(velocity.x, velocity.z),
+        vehicle.engine.gear < 0 ? controls.brake : controls.throttle, controls.handbrake);
     },
   }, { fixedHz: PHYSICS_HZ });
   loop.start();
