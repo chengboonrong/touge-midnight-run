@@ -279,6 +279,12 @@ export class GameAudio {
     }
   }
 
+  /** Drops any scheduled race cue (countdown, personal best) when a run is reset or cancelled. */
+  cancelRaceCue(): void {
+    const g = this.graph;
+    if (g && g.ctx.state !== 'closed') this.clearCue(g, g.ctx.currentTime);
+  }
+
   /** Drops scheduled cue tones and silences the cue voice. */
   private clearCue(g: Graph, t: number): void {
     g.cueOsc.frequency.cancelScheduledValues(t);

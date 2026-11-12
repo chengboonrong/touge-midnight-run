@@ -164,3 +164,39 @@ body[data-touch] .speedometer { bottom: calc(var(--touch-edge) + 132px); }
 
 @media (orientation: landscape) and (max-height: 360px) { .manga__near { top: 46%; } }
 @media (max-width: 480px) and (orientation: portrait) { .manga__near { top: 84px; left: calc(50% - 24px); font-size: 9px; letter-spacing: .12em; } }
+/* Start menu. Intent: an editorial title lockup set low-left over the live night scene so the car stays the picture:
+   small tracked TOUGE above a large light MIDNIGHT RUN, one vermilion rule, two plain 48px actions. Existing tokens only;
+   no cards, glass or gradients. Sits under Options (z 4), which stays reachable top-left; hidden while Options is open.
+   Self-critique after revision (1-5): P4 H4 E4 S4 R4 V3. */
+.start-menu { position: fixed; inset: 0; z-index: 3; overflow: clip; display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start;
+  padding: 0 max(38px, env(safe-area-inset-right)) max(36px, env(safe-area-inset-bottom)) max(38px, env(safe-area-inset-left));
+  text-shadow: 0 2px 10px var(--text-shadow); }
+.start-menu[hidden] { display: none; }
+.options[open] ~ .start-menu { visibility: hidden; }
+.start-menu__title { margin: 0; padding-left: 14px; border-left: 3px solid var(--accent); }
+.start-menu__title span { display: block; white-space: nowrap; }
+.start-menu__title span:first-child { font: 500 13px/1 var(--font-label); letter-spacing: .5em; color: var(--muted); }
+.start-menu__title span:last-child { margin-top: 10px; font: 300 clamp(30px, 9.5vw, 84px)/.95 var(--font-number); letter-spacing: -.02em; }
+.start-menu__course, .start-menu__best, .start-menu__keys { margin: 14px 0 0 17px; font-size: 9px; letter-spacing: .2em; white-space: nowrap; color: var(--muted); }
+.start-menu__best { margin-top: 6px; color: var(--paper); font-variant-numeric: tabular-nums; }
+.start-menu__actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 0 17px; }
+.start-menu__actions button { min-width: 168px; min-height: 48px; padding: 0 18px; border: 1px solid var(--rule); border-radius: 0; background: var(--ink);
+  color: var(--paper); font: 500 11px var(--font-label); letter-spacing: .14em; text-align: left; white-space: nowrap; text-shadow: none; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; }
+.start-menu__actions button:first-child { border-color: var(--accent); background: var(--accent); color: var(--ink); }
+@media (hover: hover) { .start-menu__actions button:hover { border-color: var(--paper); } }
+.start-menu__actions button:focus-visible { outline: 2px solid var(--paper); outline-offset: 2px; }
+.start-menu__actions button:active { background: var(--touch-fill-pressed); color: var(--paper); }
+body[data-touch] .start-menu__keys { display: none; }
+/* Under the title only the scene, the menu and Options show. */
+body[data-menu] .hud, body[data-menu] .race-hud, body[data-menu] .manga, body[data-menu] .touch { display: none; }
+@media (max-width: 680px) {
+  .start-menu { padding: 0 max(20px, env(safe-area-inset-right)) max(23px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); }
+  .start-menu__keys { font-size: 7px; letter-spacing: .1em; }
+}
+/* Short screens: smaller title and tighter gaps so the lockup clears Options. */
+@media (max-height: 480px) {
+  .start-menu__title span:last-child { margin-top: 8px; font-size: 30px; }
+  .start-menu__course, .start-menu__keys { margin-top: 8px; }
+  .start-menu__actions { margin-top: 12px; }
+}

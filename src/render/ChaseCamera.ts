@@ -1,7 +1,14 @@
 import { Vector3, type Object3D, type PerspectiveCamera } from 'three';
-import type { CHASE_CAMERA } from '../config';
+import type { CAMERA_PRESENTATION, CHASE_CAMERA } from '../config';
 
 export type ChaseCameraTuning = Readonly<Record<keyof typeof CHASE_CAMERA, number>>;
+export type CameraPresentationTuning = Readonly<Record<keyof typeof CAMERA_PRESENTATION, number>>;
+export type CameraPresentation = 'menu' | 'intro' | 'drive' | 'finish';
+
+/** Without presentation tuning every mode is the plain driving pose. */
+const NO_PRESENTATION: CameraPresentationTuning = {
+  menuDistance: 0, menuHeight: 0, introDistance: 0, introHeight: 0, introSeconds: 0, finishDistance: 0, finishHeight: 0, finishResponse: 0,
+};
 
 /** Sideslip is measured against at least this forward speed, m/s. */
 const SLIP_MIN_SPEED = 5;
@@ -33,10 +40,24 @@ export class ChaseCamera {
   private fresh = true;
   private shake = 0;
   private shakeTime = 0;
+  private readonly presentation: CameraPresentationTuning;
+  private mode: CameraPresentation = 'drive';
+  private introTime = 0;
+  private extraDistance = 0;
+  private extraHeight = 0;
 
-  constructor(camera: PerspectiveCamera, tuning: ChaseCameraTuning) {
+  constructor(camera: PerspectiveCamera, tuning: ChaseCameraTuning, presentation: CameraPresentationTuning = NO_PRESENTATION) {
     this.camera = camera;
     this.tuning = tuning;
+    this.presentation = presentation;
+  }
+
+  /** Idempotent; safe to call every frame. Entering or leaving the menu snaps; entering the intro restarts it. */
+  setPresentation(mode: CameraPresentation): void {
+    if (mode === this.mode) return;
+    if (mode === 'menu' || this.mode === 'menu') this.fresh = true;
+    if (mode === 'intro') this.introTime = 0;
+    this.mode = mode;
   }
 
   /** Horizontal unit direction the camera treats as the car's forward. */
@@ -97,6 +118,27 @@ export class ChaseCamera {
       this.fov += (fovTarget - this.fov) * k;
     }
 
+    // Presentation: extra distance behind and height above the driving pose, applied after the offset filter.
+    const p = this.presentation;
+    const step = dt > 0 ? dt : 0;
+    if (this.mode === 'menu') {
+      this.extraDistance = p.menuDistance;
+      this.extraHeight = p.menuHeight;
+    } else if (this.mode === 'intro') {
+      // Smoothstep in elapsed time: exactly the driving pose from introSeconds on, at any frame rate. A snap does not restart it.
+      this.introTime += step;
+      const u = p.introSeconds > 0 ? Math.min(1, this.introTime / p.introSeconds) : 1;
+      const left = 1 - u * u * (3 - 2 * u);
+      this.extraDistance = p.introDistance * left;
+      this.extraHeight = p.introHeight * left;
+    } else {
+      // Drive targets zero (and stays exactly zero by default); finish eases out with a closed-form exponential.
+      const finish = this.mode === 'finish';
+      const blend = reset ? 1 : 1 - Math.exp(-p.finishResponse * step);
+      this.extraDistance += ((finish ? p.finishDistance : 0) - this.extraDistance) * blend;
+      this.extraHeight += ((finish ? p.finishHeight : 0) - this.extraHeight) * blend;
+    }
+
     // Target offset: behind, to the right (outwards in a corner) and above.
     s.copy(h).multiplyScalar(-t.distance);
     s.x += rightX * t.rightOffset;
@@ -107,7 +149,8 @@ export class ChaseCamera {
 
     const camera = this.camera;
     camera.position.copy(car.position).add(this.offset);
-    camera.position.addScaledVector(h, -this.accelShift);
+    camera.position.addScaledVector(h, -(this.accelShift + this.extraDistance));
+    camera.position.y += this.extraHeight;
     camera.position.x += rightX * this.cornerShift;
     camera.position.z += rightZ * this.cornerShift;
     s.copy(car.position).addScaledVector(h, t.lookAhead);

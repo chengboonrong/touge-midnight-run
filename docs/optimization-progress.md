@@ -336,3 +336,23 @@ airborne, reset and cooldown cases remain suppressed. Native physics checks
 cover both sides; subjective threshold/layout validation remains manual.
 API$1.52; cumulative estimated$55.82, remaining$44.18 of the expanded$100 cap.
 The original ledger is retained; feature calls reserve$5 for final fixes.
+
+## Phase 5d — title screen and camera presentation
+
+Files: StartMenu, main, styles, CAMERA_PRESENTATION, ChaseCamera, cancelRaceCue,
+two test files and start-menu contract. The live scene now has a restrained title
+screen with actual course length/PB, Practice and Time Attack. First heldWASD
+enters Practice without losing the hold or dropping the settled car. Options
+can return to title. Menu/prepare/race/results music follows actual state, and
+reset/cancel clears already-scheduled race cues. Menu, three-second intro and
+finish camera offsets are bounded; Options freezes camera time. Reduced motion
+uses the static menu pose and ordinary driving camera during intro/finish.
+
+New tests were red first. Typecheck and all213 tests pass, including exact intro
+completion and matching60/120/144Hz camera positions, dt0 pause and formatting.
+Chrome proved immediate heldW entry, title return and neutral countdown underW.
+All actions remain within320/375/414/768-wide and568x320 landscape viewports,
+48px minimum height, without horizontal overflow. Console clear. Host added
+explicit menu disposal on real unload. Physical phone/audio comfort still manual.
+API$1.68; cumulative estimated$57.51, remaining$42.49 of$100. Next: development
+practice tuning with stock settings restored for Time Attack/PB fairness.

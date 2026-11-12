@@ -274,6 +274,22 @@ export const CHASE_CAMERA = {
   fovSpeed: 50,
 } as const;
 
+/** Presentation offsets for render/ChaseCamera.ts, on top of the driving pose. Separate from CHASE_CAMERA on purpose. */
+export const CAMERA_PRESENTATION = {
+  /** Title screen: static extra distance behind and height above, m. No orbit: the road would occlude the car. */
+  menuDistance: 2,
+  menuHeight: 0.8,
+  /** Countdown intro: starting extra distance and height, eased to zero over introSeconds. */
+  introDistance: 1.2,
+  introHeight: 0.6,
+  /** Matches the race countdown, s. */
+  introSeconds: 3,
+  /** Finish: extra distance and height approached with finishResponse, 1/s. */
+  finishDistance: 1.3,
+  finishHeight: 0.6,
+  finishResponse: 2,
+} as const;
+
 /** Tuning for render/DrivingEffects.ts: tire smoke and skid marks from the rear wheels. */
 export const EFFECTS = {
   /** Sideways contact slip from which a loaded tire smokes and marks, m/s. */

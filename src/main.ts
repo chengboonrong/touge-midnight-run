@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { CHASE_CAMERA, FIXED_DT, PHYSICS_HZ, VEHICLE } from './config';
+import { CAMERA_PRESENTATION, CHASE_CAMERA, FIXED_DT, PHYSICS_HZ, VEHICLE } from './config';
 import { GameLoop } from './core/GameLoop';
 import { Input } from './core/Input';
 import { Car } from './entities/Car';
@@ -24,6 +24,8 @@ import type { RaceState } from './race/RaceSession';
 import { browserStorage, courseKey, loadBestLap, saveBestLap } from './race/RaceRecords';
 import { RaceMarkers } from './world/RaceMarkers';
 import { Options, loadQuality } from './ui/Options';
+import { StartMenu } from './ui/StartMenu';
+import type { MusicState } from './audio/musicState';
 import { TouchControls } from './ui/TouchControls';
 import { addPassColliders, readRoute } from './world/MountainPass';
 import './styles.css';
@@ -115,6 +117,9 @@ async function bootstrap(): Promise<void> {
     touch = new TouchControls(input, document, window);
   }
   const audio = new GameAudio(window, document);
+  // Title screen state. Declared before Options so its toggle callback never reads it early.
+  let menuOpen = true;
+  touch?.setDisabled(true);
   // Opening and closing both drop every hold, so nothing stays stuck across the pause.
   const options = new Options(document, initialQuality, quality => {
     setQuality(quality);
@@ -123,12 +128,12 @@ async function bootstrap(): Promise<void> {
   }, open => {
     input.clearAll();
     touch?.clear();
-    touch?.setDisabled(open);
+    touch?.setDisabled(open || menuOpen);
     audio.setPaused(open);
   });
   addAudioControls(document, options.panel, audio);
   const controls: VehicleInput = { throttle: 0, brake: 0, steer: 0, handbrake: false };
-  const chase = new ChaseCamera(camera, CHASE_CAMERA);
+  const chase = new ChaseCamera(camera, CHASE_CAMERA, CAMERA_PRESENTATION);
   let snapCamera = true;
 
   // Time attack: free practice is the default; a timed run starts from the OPTIONS menu.
@@ -142,6 +147,8 @@ async function bootstrap(): Promise<void> {
     practice: 'NIGHT PRACTICE / 01', countdown: 'COUNTDOWN / 01', racing: 'TIME ATTACK / 01', finished: 'RESULTS / 01',
   };
   let shownState: RaceState | null = null;
+  // Music is tracked apart from the race state: practice -> title changes the music only.
+  let shownMusic: MusicState | null = null;
   /** Drains race events to HUD, audio and storage, then mirrors a state change to music and the session label. */
   const pump = (): void => {
     for (const event of race.drainEvents()) {
@@ -157,17 +164,49 @@ async function bootstrap(): Promise<void> {
     }
     if (race.state !== shownState) {
       shownState = race.state;
-      audio.setMusicState(RACE_MUSIC[shownState]);
       hud.setSessionLabel(SESSION_LABEL[shownState]);
     }
+    const music: MusicState = menuOpen ? 'menu' : RACE_MUSIC[race.state];
+    if (music !== shownMusic) {
+      shownMusic = music;
+      audio.setMusicState(music);
+    }
   };
-  const resetRun = (): void => { car.reset(); snapCamera = true; impacts.reset(); drift.reset(); effects?.reset(); manga?.reset(); nearMiss.reset(); nearPending = false; };
+  /** Clears visual histories, drift and any scheduled race cue; the car pose is kept. */
+  const clearRun = (): void => { snapCamera = true; impacts.reset(); drift.reset(); effects?.reset(); manga?.reset(); nearMiss.reset(); nearPending = false; audio.cancelRaceCue(); };
+  const resetRun = (): void => { car.reset(); clearRun(); };
   /** R or FREE PRACTICE: drops the current lap, keeps the best. Held keys are left as they are. */
   const toPractice = (): void => {
     resetRun();
     race.cancel(vehicle.body.translation());
     pump();
   };
+  const dropHolds = (): void => { input.clearAll(); touch?.clear(); };
+  /** Shows or hides the title. Touch stays disabled under the title and under Options. */
+  const setMenu = (open: boolean): void => {
+    menuOpen = open;
+    if (open) { document.body.dataset.menu = 'true'; menu.show(race.best?.time ?? null); }
+    else { delete document.body.dataset.menu; menu.hide(); }
+    touch?.setDisabled(open || options.isOpen);
+  };
+  /** Title -> free practice from the settled pose (no spawn drop). Held keys are kept. */
+  const enterPractice = (): void => { setMenu(false); clearRun(); race.cancel(vehicle.body.translation()); pump(); };
+  const startAttack = (): void => {
+    dropHolds();
+    options.root.open = false;
+    setMenu(false);
+    resetRun();
+    // The toggle event arrives later; unpause now so the first countdown beep is scheduled, not dropped.
+    audio.setPaused(false);
+    chase.setPresentation('drive'); // So a restart during the countdown replays the intro.
+    race.start(vehicle.body.translation());
+    pump();
+  };
+  const freePractice = (): void => { dropHolds(); options.root.open = false; setMenu(false); toPractice(); };
+  const toTitle = (): void => { dropHolds(); options.root.open = false; setMenu(true); toPractice(); };
+  const menu = new StartMenu(document, route.length, race.best?.time ?? null, startAttack, () => { dropHolds(); enterPractice(); });
+  window.addEventListener('pagehide', event => { if (!event.persisted) menu.dispose(); });
+  document.body.dataset.menu = 'true';
   const menuButton = (text: string, onClick: () => void): HTMLButtonElement => {
     const button = document.createElement('button');
     button.type = 'button';
@@ -177,22 +216,9 @@ async function bootstrap(): Promise<void> {
     return button;
   };
   options.panel.prepend(
-    menuButton('START TIME ATTACK', () => {
-      input.clearAll();
-      touch?.clear();
-      resetRun();
-      options.root.open = false;
-      // The toggle event arrives later; unpause now so the first countdown beep is scheduled, not dropped.
-      audio.setPaused(false);
-      race.start(vehicle.body.translation());
-      pump();
-    }),
-    menuButton('FREE PRACTICE', () => {
-      input.clearAll();
-      touch?.clear();
-      toPractice();
-      options.root.open = false;
-    }),
+    menuButton('START TIME ATTACK', startAttack),
+    menuButton('FREE PRACTICE', freePractice),
+    menuButton('TITLE SCREEN', toTitle),
   );
   pump();
 
@@ -205,8 +231,10 @@ async function bootstrap(): Promise<void> {
       // Paused: no forces and no world step. Both interpolation endpoints become the current pose.
       if (options.isOpen) { input.clearAll(); car.savePreviousPose(); return; }
       if (input.consumeReset()) toPractice();
+      // The first held drive key on the title enters free practice; the hold is kept, so the car answers at once.
+      if (menuOpen && (input.isHeld('KeyW') || input.isHeld('KeyA') || input.isHeld('KeyS') || input.isHeld('KeyD'))) enterPractice();
       const phase = race.state;
-      if (phase === 'practice' || phase === 'racing') {
+      if (!menuOpen && (phase === 'practice' || phase === 'racing')) {
         controls.throttle = input.isHeld('KeyW') ? 1 : 0;
         controls.brake = input.isHeld('KeyS') ? 1 : 0;
         controls.steer = Number(input.isHeld('KeyD')) - Number(input.isHeld('KeyA'));
@@ -230,7 +258,7 @@ async function bootstrap(): Promise<void> {
       effects?.fixedUpdate(dt);
       race.update(dt, vehicle.body.translation());
       const after = race.state;
-      if (after === 'practice' || after === 'racing') {
+      if (!menuOpen && (after === 'practice' || after === 'racing')) {
         // Chassis-local velocity: forward is local -Z, right is local +X.
         const q = vehicle.body.rotation(), v = vehicle.body.linvel();
         const forward = -(v.x * 2 * (q.x * q.z + q.w * q.y) + v.y * 2 * (q.y * q.z - q.w * q.x) + v.z * (1 - 2 * (q.x * q.x + q.y * q.y)));
@@ -261,7 +289,10 @@ async function bootstrap(): Promise<void> {
       // A near miss in the same frame as a real impact is dropped; the flag never outlives one frame.
       if (nearPending && !(impact > 0)) { manga?.nearMiss(); audio.nearMiss(); }
       nearPending = false;
-      chase.update(car.root, velocity, vehicle.body.angvel().y, frameDt, snapCamera);
+      const shown = race.state;
+      // Reduced motion keeps the plain driving camera instead of the intro and finish moves.
+      chase.setPresentation(menuOpen ? 'menu' : reducedMotion.matches ? 'drive' : shown === 'countdown' ? 'intro' : shown === 'finished' ? 'finish' : 'drive');
+      chase.update(car.root, velocity, vehicle.body.angvel().y, options.isOpen ? 0 : frameDt, snapCamera);
       snapCamera = false;
       const braking = controls.brake > 0 || controls.handbrake;
       brakeLight.intensity = braking ? 1.2 : 0.35;
