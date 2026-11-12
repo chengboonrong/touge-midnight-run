@@ -253,6 +253,13 @@ export class GameAudio {
     this.thump(g, g.ctx.currentTime, 140, 0.35 + 0.55 * s, 0.07);
   }
 
+  /** A quiet high tick for a real near miss. Reuses the fx path; silent while locked, paused, hidden or muted. */
+  nearMiss(): void {
+    const g = this.graph;
+    if (!g || this.paused || this.page.visibilityState !== 'visible' || g.ctx.state !== 'running') return;
+    this.thump(g, g.ctx.currentTime, 1800, 0.15, 0.06);
+  }
+
   /** A short race tone sequence on the preallocated cue voice, replacing any earlier cue. Event-driven; silent while locked, paused, hidden or muted. */
   raceCue(kind: RaceCueKind): void {
     const g = this.graph;

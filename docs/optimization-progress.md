@@ -315,3 +315,24 @@ one measured local sequence, not a universal benchmark. Startup does more work.
 Human smoke/mix judgment, physical phone and long heap profiling remain manual.
 API draft$1.95; cumulative$54.30, remaining$45.70. Manga/near-miss draft then cost
 $1.52 (cumulative$55.82) and is awaiting its own tests and real-trimesh checks.
+
+## Phase 6b — gameplay-driven edge strokes and near misses
+
+Files: MangaFeedback, NearMiss, main, GameAudio, styles and two regression files.
+High-speed edge strokes have bounded opacity; qualifying contact-force impacts
+produce brief corner strokes, and fast grounded passes beside an obstacle can
+produce CLOSE CALL plus a short sound using the existing audio voice. Low skips
+strokes, reduced motion skips all three effects, Options freezes event time.
+Static SVG and cached opacity writes add no per-frame nodes or own timers.
+
+Tests were applied first. All205 tests, typecheck and production build pass.
+The host added finite-dt guards and immediate quality/reduced-motion clearing.
+A native pass-style large-trimesh test exposed a real bug: Rapier broad-phase
+contact pairs can exist with zero solver contacts. The detector now inspects
+numSolverContacts inside contactPair's temporary callback; it never retains or
+frees the temporary manifold. The regression proves one broad-phase candidate,
+zero solver contacts and one eligible near-miss event. Actual touching, slow,
+airborne, reset and cooldown cases remain suppressed. Native physics checks
+cover both sides; subjective threshold/layout validation remains manual.
+API$1.52; cumulative estimated$55.82, remaining$44.18 of the expanded$100 cap.
+The original ledger is retained; feature calls reserve$5 for final fixes.

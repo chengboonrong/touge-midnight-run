@@ -6,10 +6,12 @@ import { GameLoop } from './core/GameLoop';
 import { Input } from './core/Input';
 import { Car } from './entities/Car';
 import { ImpactFeedback, impactThresholdForce } from './physics/ImpactFeedback';
+import { NearMiss } from './physics/NearMiss';
 import { PhysicsWorld } from './physics/PhysicsWorld';
 import { RaycastVehicle, type VehicleInput } from './physics/RaycastVehicle';
 import { ChaseCamera } from './render/ChaseCamera';
 import { DrivingEffects } from './render/DrivingEffects';
+import { MangaFeedback } from './render/MangaFeedback';
 import { createScene } from './render/SceneSetup';
 import { loadPassAsset } from './render/loadPassAsset';
 import { GameAudio } from './audio/GameAudio';
@@ -56,6 +58,10 @@ async function bootstrap(): Promise<void> {
   const car = new Car(vehicle, coupe.scene);
   // Tire smoke and skid marks. Null after a real unload, so the loop must use `effects?.`.
   let effects: DrivingEffects | null = new DrivingEffects(scene, vehicle, initialQuality);
+  // Edge streaks, impact strokes and the near-miss word. Null after a real unload.
+  let manga: MangaFeedback | null = new MangaFeedback(document, initialQuality);
+  const nearMiss = new NearMiss(RAPIER, physics.world, vehicle.body, vehicle.collider, VEHICLE.chassisHalfExtents.x);
+  let nearPending = false;
   // Collision feedback: contact-force events on the chassis collider only, drained every fixed step.
   const vehicleCollider = vehicle.collider;
   vehicleCollider.setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS);
@@ -73,6 +79,8 @@ async function bootstrap(): Promise<void> {
     contactEvents = null;
     effects?.dispose();
     effects = null;
+    manga?.dispose();
+    manga = null;
   });
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   scene.add(car.root);
@@ -111,6 +119,7 @@ async function bootstrap(): Promise<void> {
   const options = new Options(document, initialQuality, quality => {
     setQuality(quality);
     effects?.setQuality(quality);
+    manga?.setQuality(quality);
   }, open => {
     input.clearAll();
     touch?.clear();
@@ -152,7 +161,7 @@ async function bootstrap(): Promise<void> {
       hud.setSessionLabel(SESSION_LABEL[shownState]);
     }
   };
-  const resetRun = (): void => { car.reset(); snapCamera = true; impacts.reset(); drift.reset(); effects?.reset(); };
+  const resetRun = (): void => { car.reset(); snapCamera = true; impacts.reset(); drift.reset(); effects?.reset(); manga?.reset(); nearMiss.reset(); nearPending = false; };
   /** R or FREE PRACTICE: drops the current lap, keeps the best. Held keys are left as they are. */
   const toPractice = (): void => {
     resetRun();
@@ -236,6 +245,7 @@ async function bootstrap(): Promise<void> {
           if (i >= 2) rearSlip = Math.max(rearSlip, Math.abs(wheel.slipSpeed));
         }
         drift.update(dt, forward, side, loaded, rearSlip);
+        if (nearMiss.update(dt, loaded)) nearPending = true;
       }
       pump();
     },
@@ -246,7 +256,11 @@ async function bootstrap(): Promise<void> {
       if (impact > 0) {
         if (!reducedMotion.matches) chase.impact(impact);
         audio.impact(impact);
+        manga?.impact(impact);
       }
+      // A near miss in the same frame as a real impact is dropped; the flag never outlives one frame.
+      if (nearPending && !(impact > 0)) { manga?.nearMiss(); audio.nearMiss(); }
+      nearPending = false;
       chase.update(car.root, velocity, vehicle.body.angvel().y, frameDt, snapCamera);
       snapCamera = false;
       const braking = controls.brake > 0 || controls.handbrake;
@@ -254,6 +268,7 @@ async function bootstrap(): Promise<void> {
       for (const material of tailMaterials) material.emissiveIntensity = braking ? 2.8 : 0.8;
       effects?.render(options.isOpen ? 1 : alpha, renderer.domElement.height);
       renderer.render(scene, camera);
+      manga?.render(frameDt, Math.hypot(velocity.x, velocity.z), options.isOpen);
       hud.update(Math.hypot(velocity.x, velocity.z) * 3.6, car.root.position,
         Math.atan2(chase.forward.x, -chase.forward.z), controls.handbrake, vehicle.forwardSpeed < -0.5, vehicle.engine);
       audio.update(vehicle.engine, vehicle.wheels, Math.hypot(velocity.x, velocity.z),
