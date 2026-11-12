@@ -219,3 +219,12 @@ or contexts were introduced. An interrupted outgoing crossfade tail can still
 be cut by a rapid third request (bounded two-slot tradeoff).
 API$0.90; cumulative$48.44, remaining$51.56. Next: fixed-step timed-lap logic,
 then its countdown/cues/checkpoints/PB HUD. No new race UI is claimed yet.
+
+Loading follow-up (no API cost): Cloudflare may decode origin gzip and remove
+Content-Encoding for clients without compression negotiation. A failing proxy-
+decoded regression exposed the remaining header assumption. Loader now checks
+actual gzip magic before decoding. This handles plain gzip, browser-decoded and
+proxy-decoded bodies without duplicate raw downloads; five loader tests pass.
+It buffers the compressed response before parsing (about4.9MB extra transient
+storage on the gzip path), trading a small loading-only allocation for robust
+proxy behavior. Browser compression negotiation still transfers4,874,419bytes.

@@ -48,3 +48,10 @@ test('browsers without native decompression use the raw loader directly',async t
   const parsed={scene:'http-decoded'};
   assert.equal(await loadPassAsset({parseAsync:async bytes=>{assert.deepEqual(Buffer.from(bytes),raw);return parsed;},loadAsync:()=>{throw Error('double decompression triggered raw fallback');}}),parsed);
 });
+
+test('a proxy-decoded GLB without Content-Encoding is parsed directly',async t=>{
+ const oldFetch=globalThis.fetch;t.after(()=>{globalThis.fetch=oldFetch;});
+ globalThis.fetch=async()=>new Response(raw);
+ const parsed={scene:'proxy-decoded'};
+ assert.equal(await loadPassAsset({parseAsync:async bytes=>{assert.deepEqual(Buffer.from(bytes),raw);return parsed;},loadAsync:()=>{throw Error('proxy-decoded file triggered duplicate raw download');}}),parsed);
+});

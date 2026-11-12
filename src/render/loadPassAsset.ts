@@ -7,11 +7,13 @@ export async function loadPassAsset(loader: Pick<GLTFLoader, 'parseAsync' | 'loa
     try {
       const response = await fetch(`${url}.gz`);
       if (!response.ok || !response.body) throw Error('Compressed pass unavailable');
-      // Fetch decodes HTTP Content-Encoding automatically (including Vite's .gz serving).
-      const stream = response.headers.get('Content-Encoding')?.includes('gzip')
-        ? response.body
-        : response.body.pipeThrough(new DecompressionStream('gzip'));
-      return await loader.parseAsync(await new Response(stream).arrayBuffer(), '/assets/touge/');
+      // Fetch and proxies may already decode gzip and remove its header. Inspect bytes instead.
+      const bytes = await response.arrayBuffer();
+      const signature = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 2));
+      const data = signature[0] === 0x1f && signature[1] === 0x8b
+        ? await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer()
+        : bytes;
+      return await loader.parseAsync(data, '/assets/touge/');
     } catch {
       // Old caches, unsupported streams or a failed transfer can use the raw file.
     }
