@@ -1,3 +1,5 @@
+> Historical handling-only report. Current results and budget: [final validation](final-validation.md).
+
 # Racing feel — Phase 0 and first handling increment
 
 Verified 2026-11-12. This completes the audit and the first incremental vehicle

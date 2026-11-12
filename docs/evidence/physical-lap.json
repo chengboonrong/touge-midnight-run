@@ -1,0 +1,74 @@
+{
+  "lap": {
+    "mode": "finished",
+    "elapsed": 70.1657649531456,
+    "checkpoint": 3,
+    "valid": true,
+    "index": 30,
+    "laps": 0.9980769230769231,
+    "speedKmh": 0.22079795375534406,
+    "maxCrossTrack": 2.37282231904783,
+    "offRoadSeconds": 0,
+    "upY": 0.9999999999792573,
+    "best": {
+      "time": 70.1657649531456,
+      "splits": [
+        17.200662978690385,
+        35.12486078768806,
+        50.317490471299315
+      ]
+    },
+    "storedPB": "{\"time\":70.1657649531456,\"splits\":[17.200662978690385,35.12486078768806,50.317490471299315]}"
+  },
+  "performance": {
+    "frames": 300,
+    "width": 1144,
+    "height": 1049,
+    "dpr": 2,
+    "assets": [
+      {
+        "url": "http://127.0.0.1:5173/assets/touge/mountain_pass.glb.gz",
+        "bytes": 4874419,
+        "transfer": 300
+      }
+    ],
+    "resourcesAtStart": {
+      "Buffer": 197,
+      "Texture": 8,
+      "Framebuffer": 2,
+      "Renderbuffer": 2,
+      "Program": 12,
+      "Shader": 4,
+      "VertexArray": 117
+    },
+    "resourcesAtEnd": {
+      "Buffer": 197,
+      "Texture": 8,
+      "Framebuffer": 2,
+      "Renderbuffer": 2,
+      "Program": 12,
+      "Shader": 4,
+      "VertexArray": 117
+    },
+    "fps": 119.99999999999999,
+    "frameMs": {
+      "median": 8.30000000000291,
+      "p95": 9.60000000000582,
+      "p99": 10.299999999988358
+    },
+    "callbackMs": {
+      "median": 1,
+      "p95": 2.399999976158142
+    }
+  },
+  "resources": {
+    "Buffer": 199,
+    "Texture": 11,
+    "Framebuffer": 2,
+    "Renderbuffer": 2,
+    "Program": 12,
+    "Shader": 4,
+    "VertexArray": 135
+  },
+  "console": []
+}

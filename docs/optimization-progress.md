@@ -377,3 +377,54 @@ scrollable actions. Production panel absence and human driving comfort remain
 checks below. The proposed plural tests path was corrected to real test/.
 API$1.37; cumulative estimated$58.87, remaining$41.13. Next: actual-contact
 sustained guardrail scrape, then final review and production validation.
+
+## Phase 3c / 6c — actual rail scrape and exported-geometry regression
+
+Files: GuardrailScrape, GameAudio/audioMath, MountainPass callback, main,
+NearMiss, five regression files and guardrail-scrape doc. One additional seeded
+noise/filter/gain path follows actual selected-rail solver contacts, normal
+impulses and contact-point tangential speed; it never changes physics. The
+fixed graph uses the SFX master and existing30Hz parameter throttle. Reset,
+end of contact, pause and mute are verified. See the subsystem doc for proof.
+
+Tests were red first. All233 tests, typecheck and build pass. Host loaded the
+actual exported Guardrails GLB into native Rapier, catching a near-miss false
+negative missed by vertical-wall fixtures (ray normalY0.581 versus old0.4 gate).
+The steep-face cutoff now0.8 still rejects shallow slopes. Browser normal-force
+driving proved one near miss at93.55km/h/4 loaded wheels/0 solver contacts, and
+real sliding contact drove scrape level1 with a nonzero audio gain. No console
+errors. Stable audio nodes over111s, mute RMS/peak0, preferences restored.
+API$1.03; cumulative estimated$59.90, remaining$40.10 before final review.
+Human mix/phone/background judgment remains manual. Next: production validation.
+
+## Phase 7 — final review, startup guard and physical validation
+
+Claude static review proposed no patches and identified five browser followups.
+Options/StartMenu focus recovery and the exact deferred music A->B->A case were
+already covered and rechecked. A held-compiler browser fixture reproduced a real
+keyboard race: Tab/Enter started countdown while ready was unset. Menu/Options
+are now inert until compileAsync completes. The same fixture then exposed only
+the loading status, kept the countdown empty and focus on BODY. Normal ready
+keyboard selection and immediate driving still work; source change is five lines.
+
+All233 game tests/typecheck/build and19 offline runner tests pass. A final stock
+physical timed lap took70.165765s, all3 checkpoints, valid PB save, no off-road
+seconds, max sampled cross-track2.373m, upright. The fixture applies only normal
+pedals/steering, protects the user's PB via an isolated disposable storage key,
+and was removed. The moving300-frame sample was120FPS, frame p95 9.6ms/p99 10.3ms,
+callback p95 2.4ms at1144x1049 CSS/High DPR1.75 on an M1 Max/64GB/10 cores/Chrome.
+GPU counts stayed fixed in the moving window and plateaued after seeing the
+whole course; this is not a long heap-leak or physical-mobile certification.
+
+Final review API$1.76. Cumulative estimate$61.658016 of$100, remaining$38.341984.
+Ledger history (91requests) is retained, no request in flight and no lock.
+MAX_OUTPUT_TOKENS remains128000. Estimates use configured rates; provider billing
+is the authority. Manual feel/mix/physical-phone checks and optional replay/ghost/manual shifts
+are the next useful tasks. See final-validation.md for production checks.
+
+Production follow-up: the existing Cloudflare URL serves the final built JS,
+HTTP200, with no development tuning panel. Low worked; W drove immediately after
+mouse-closing Options. The original High preference was restored. Console clear,
+title screen left open, temporary QA fixtures removed. The preview server and
+tunnel remain running. Private/QA paths return the SPA fallback without their
+contents. Final evidence and per-phase details are saved under docs/.

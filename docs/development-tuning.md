@@ -45,7 +45,7 @@ Automated: `test/vehicle-tune.test.mjs` covers the parse/validate/clone helpers 
 
 Chrome checks:
 
-- [ ] Panel appears under Options in `npm run dev` and is absent from a production build.
+- [x] Panel appears in dev; the actual production game served through Cloudflare has no DEVELOPMENT TUNING control.
 - [x] At320x480 all16 inputs are280x48px, inside the viewport; both bottom actions can be reached by scrolling.
 - [x] Mass1700 with torque400 shows an error; the actual body stays1200kg/340Nm and its mass-property apply count stays1.
 - [x] Applying from title updates the actual body to1500kg/COM -0.15m/400Nm, resets Practice, and keeps Options open.

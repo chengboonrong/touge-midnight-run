@@ -14,3 +14,10 @@ Simulated touch detection was also checked in Chrome: six controls disabled on t
 all enabled after Practice; heldGAS1.5s reached28km/h and released cleanly. Opening
 Options disabled all six; returning title then opening/closing Options kept them
 disabled. This checks pointer/UI wiring, not a physical mobile browser.
+
+Final startup follow-up: an actual pending parallel-compiler fixture reproduced
+Tab/Enter starting countdown before ready. Menu/Options are now inert through
+compileAsync; the same fixture has only the loading status and no countdown.
+After ready, Tab/Tab/Tab/Enter selects Practice and W drives immediately. Closing
+Options with Enter and with the mouse also returns focus to driving. Production
+through Cloudflare passes these ready-state controls with no DEV tuning panel.
