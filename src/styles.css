@@ -38,11 +38,17 @@ kbd { display: inline-grid; place-items: center; min-width: 19px; height: 19px; 
 .speedometer { position: absolute; right: 38px; bottom: 34px; min-width: 184px; text-align: right; }
 .speedometer__status { display: block; padding-right: 2px; font-size: 8px; letter-spacing: .24em; color: var(--muted); }
 .hud--braking .speedometer__status { color: var(--accent); }
+.speedometer__head { display: flex; justify-content: space-between; align-items: baseline; }
+.speedometer__gear { font: 500 22px/1 var(--font-number); font-variant-numeric: tabular-nums; }
+.speedometer__rpm { font-size: 7px; letter-spacing: .05em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.hud--limit .speedometer__gear { color: var(--accent); }
 .speedometer__value { display: flex; justify-content: flex-end; align-items: baseline; gap: 11px; }
 .speedometer__number { font: 300 84px/.99 var(--font-number); letter-spacing: -.055em; font-variant-numeric: tabular-nums; }
 .speedometer__unit { font-size: 8px; letter-spacing: .14em; color: var(--muted); }
-.speedometer__rule { margin-top: 15px; height: 2px; background: var(--rule); }
-.speedometer__rule::after { content: ""; display: block; width: 28px; height: 2px; margin-left: auto; background: var(--accent); }
+/* Rev bar: ivory fill from the left over the rule; the vermilion last tenth is the redline zone. */
+.speedometer__rule { position: relative; margin-top: 15px; height: 3px; background: var(--rule); }
+.speedometer__rule::after { content: ""; position: absolute; top: 0; right: 0; width: 10%; height: 100%; background: var(--accent); }
+.speedometer__rev { display: block; height: 100%; background: var(--paper); transform: scaleX(0); transform-origin: left; transition: transform .08s linear; }
 #loading { position: fixed; z-index: 5; inset: 0; display: grid; align-content: center; justify-content: center; gap: 18px; background: var(--ink); text-align: center; }
 #loading strong { font-size: 29px; letter-spacing: .25em; font-weight: 500; }
 #loading span { max-width: 420px; font-size: 11px; letter-spacing: .10em; line-height: 1.6; color: var(--muted); }
@@ -81,6 +87,7 @@ body[data-touch] .speedometer { bottom: calc(var(--touch-edge) + 132px); }
   .speedometer__number { font-size: 60px; }
   .speedometer__value { gap: 8px; }
   .speedometer__status, .speedometer__unit { font-size: 6px; }
+  .speedometer__gear { font-size: 16px; }
 }
 /* Short landscape: one row of buttons, and the compact map and speed so they clear each other. */
 @media (orientation: landscape) and (max-height: 480px) {
@@ -94,4 +101,4 @@ body[data-touch] .speedometer { bottom: calc(var(--touch-edge) + 132px); }
 @media (orientation: landscape) and (max-height: 360px) {
   body[data-touch] .speedometer { top: 18px; right: calc(50% - 60px); bottom: auto; min-width: 120px; }
 }
-@media (prefers-reduced-motion: reduce) { .controls { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .controls, .speedometer__rev { transition: none; } }

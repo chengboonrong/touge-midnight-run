@@ -179,7 +179,132 @@ function restingWheel(restLength: number): WheelState {
   };
 }
 
+/** Engine and gearbox state for the HUD and audio. Read-only for callers. */
+export interface EngineState {
+  /** Engine speed in rev/min. Always finite and within [idleRpm, redlineRpm]. */
+  readonly rpm: number;
+  /** -1 = reverse, 0 = neutral (declutched), 1.. = forward gear. */
+  readonly gear: number;
+  readonly idleRpm: number;
+  readonly redlineRpm: number;
+  /** True during the torque interruption of an automatic gear change. */
+  readonly shifting: boolean;
+  /** True while the rev limiter holds the engine at the redline. */
+  readonly limiting: boolean;
+}
+
+/**
+ * Arcade engine and automatic gearbox. In gear the engine speed is the road
+ * speed through the gearing, never below idle (as if the clutch slipped) and
+ * never above the redline. Drive force is engine torque at that speed through
+ * the gear, bounded by the tuning's force ceilings and top speeds. This is
+ * not a wheelspin simulation: the wheels have no speed of their own.
+ */
+export class Powertrain implements EngineState {
+  rpm: number;
+  gear = 0;
+  shifting = false;
+  limiting = false;
+  readonly idleRpm: number;
+  readonly redlineRpm: number;
+  private readonly t: VehicleTuning;
+  /** Time left of the current shift's torque interruption, s. */
+  private shiftLeft = 0;
+
+  constructor(tuning: VehicleTuning) {
+    this.t = tuning;
+    this.idleRpm = tuning.engineIdleRpm;
+    this.redlineRpm = tuning.engineRedlineRpm;
+    this.rpm = this.idleRpm;
+  }
+
+  /** Full-throttle crankshaft torque in Nm: the torque curve under the power limit. */
+  torqueAt(rpm: number): number {
+    const t = this.t;
+    const rise = clamp(
+      (rpm - t.engineIdleRpm) / Math.max(1, t.enginePeakTorqueRpm - t.engineIdleRpm),
+      0,
+      1,
+    );
+    const curve = t.engineIdleTorqueFraction + (1 - t.engineIdleTorqueFraction) * rise;
+    return Math.min(t.enginePeakTorque * curve, t.enginePeakPower / ((Math.max(rpm, 1) * Math.PI) / 30));
+  }
+
+  /**
+   * Advances the engine and gearbox by dt and returns the drive force for the
+   * rear axle in N, signed along the chassis' forward axis.
+   * direction: 1 = forward gears, -1 = reverse, 0 = neutral, where demand
+   * (0..1) only revs the engine.
+   */
+  update(dt: number, forwardSpeed: number, demand: number, direction: -1 | 0 | 1): number {
+    const t = this.t;
+    const pedal = clamp(demand, 0, 1);
+    if (direction === 0) {
+      this.gear = 0;
+      this.shiftLeft = 0;
+      this.shifting = false;
+      // Aim a little past the redline so full throttle reaches the limiter.
+      const target = t.engineIdleRpm + pedal * (1.05 * t.engineRedlineRpm - t.engineIdleRpm);
+      const keep = t.engineRevTime > 0 ? Math.exp(-dt / t.engineRevTime) : 0;
+      this.rpm = clamp(target + (this.rpm - target) * keep, t.engineIdleRpm, t.engineRedlineRpm);
+      this.limiting = this.rpm >= t.engineRedlineRpm;
+      return 0;
+    }
+
+    const speed = Math.max(0, forwardSpeed * direction);
+    // Engine rev/min per unit of gear ratio at this road speed.
+    const rpmPerRatio = (speed / t.wheelRadius) * t.finalDrive * (30 / Math.PI);
+    const gears = t.gearRatios;
+    if (direction < 0) {
+      this.gear = -1;
+      this.shiftLeft = 0;
+    } else if (this.gear < 1) {
+      // Engaging from neutral or reverse: lowest gear that is not due an upshift.
+      this.gear = 1;
+      this.shiftLeft = 0;
+      while (this.gear < gears.length && rpmPerRatio * gears[this.gear - 1] >= t.upshiftRpm) {
+        this.gear++;
+      }
+    } else if (this.shifting) {
+      this.shiftLeft -= dt;
+    } else {
+      const roadRpm = rpmPerRatio * gears[this.gear - 1];
+      if (roadRpm >= t.upshiftRpm && this.gear < gears.length) {
+        this.gear++;
+        this.shiftLeft = t.shiftTime;
+      } else if (roadRpm <= t.downshiftRpm && this.gear > 1) {
+        this.gear--;
+        this.shiftLeft = t.shiftTime;
+      }
+    }
+    this.shifting = this.shiftLeft > 1e-9;
+
+    // The new gear is engaged at once, so the revs drop (or rise) with it.
+    const ratio = direction < 0 ? t.reverseGearRatio : gears[this.gear - 1];
+    const roadRpm = rpmPerRatio * ratio;
+    this.rpm = clamp(roadRpm, t.engineIdleRpm, t.engineRedlineRpm);
+    this.limiting = roadRpm >= t.engineRedlineRpm;
+    if (this.shifting || this.limiting) return 0;
+
+    const wheelForce = (this.torqueAt(this.rpm) * ratio * t.finalDrive) / t.wheelRadius;
+    const ceiling = direction < 0 ? t.reverseForce : t.engineForce;
+    const top = direction < 0 ? t.reverseTopSpeed : t.topSpeed;
+    return direction * pedal * Math.min(ceiling, wheelForce) * taper(speed / top);
+  }
+
+  /** Back to neutral at idle, with no shift in progress. */
+  reset(): void {
+    this.gear = 0;
+    this.rpm = this.idleRpm;
+    this.shifting = false;
+    this.limiting = false;
+    this.shiftLeft = 0;
+  }
+}
+
 export class RaycastVehicle {
+  /** Engine and gearbox telemetry from the latest update(), for HUD and audio. */
+  readonly engine: Readonly<EngineState>;
   readonly body: RAPIER.RigidBody;
   readonly collider: RAPIER.Collider;
   readonly tuning: VehicleTuning;
@@ -191,6 +316,7 @@ export class RaycastVehicle {
   private readonly rapier: RapierApi;
   private readonly world: RAPIER.World;
   private readonly wheelStates: WheelState[];
+  private readonly powertrain: Powertrain;
   /** Current front wheel angle in rad. Positive = left. */
   private steer = 0;
   /**
@@ -203,6 +329,8 @@ export class RaycastVehicle {
     this.rapier = rapier;
     this.world = world;
     this.tuning = tuning;
+    this.powertrain = new Powertrain(tuning);
+    this.engine = this.powertrain;
 
     const { spawn, chassisHalfExtents: half } = tuning;
     this.body = world.createRigidBody(
@@ -288,7 +416,8 @@ export class RaycastVehicle {
     // --- Pedals --------------------------------------------------------------
     const throttle = clamp(input.throttle, 0, 1);
     const brake = clamp(input.brake, 0, 1);
-    let driveForce = 0; // signed along forward, total for the rear axle
+    let direction: -1 | 0 | 1 = 0; // gear direction this step, 0 = neutral
+    let demand = 0; // 0..1 drive demand in that direction
     let brakeForce = 0; // magnitude, total for all four wheels
 
     if (throttle > 0 && brake > 0) {
@@ -297,16 +426,29 @@ export class RaycastVehicle {
       if (forwardSpeed < -t.directionChangeSpeed) {
         brakeForce = throttle * t.brakeForce; // rolling backwards: stop first
       } else {
-        driveForce = throttle * t.engineForce * taper(forwardSpeed / t.topSpeed);
+        direction = 1;
+        demand = throttle;
       }
     } else if (brake > 0) {
       if (forwardSpeed > t.directionChangeSpeed) {
         brakeForce = brake * t.brakeForce;
       } else {
-        driveForce = -brake * t.reverseForce * taper(-forwardSpeed / t.reverseTopSpeed);
+        direction = -1;
+        demand = brake;
       }
     }
-    if (input.handbrake) driveForce = 0; // locked rear wheels cannot drive
+    // No pedal is driving: stay in gear while rolling, neutral near standstill.
+    if (direction === 0 && Math.abs(forwardSpeed) > t.directionChangeSpeed) {
+      direction = forwardSpeed > 0 ? 1 : -1;
+    }
+    // Handbrake: locked rear wheels cannot drive. Declutched, so the throttle
+    // only revs the engine.
+    if (input.handbrake) {
+      direction = 0;
+      demand = brake > 0 ? 0 : throttle;
+    }
+    // Signed along forward, total for the rear axle.
+    const driveForce = this.powertrain.update(dt, forwardSpeed, demand, direction);
 
     // Handbrake grip: cut at once while held. After release the missing grip
     // decays exponentially, so the result depends on elapsed time only.
@@ -471,6 +613,7 @@ export class RaycastVehicle {
     this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.steer = 0;
     this.rearGripScale = 1;
+    this.powertrain.reset();
     for (const wheel of this.wheelStates) {
       Object.assign(wheel, restingWheel(this.tuning.suspensionRestLength));
     }

@@ -115,7 +115,7 @@ async function bootstrap(): Promise<void> {
       renderer.render(scene, camera);
       const velocity = vehicle.body.linvel();
       hud.update(Math.hypot(velocity.x, velocity.z) * 3.6, car.root.position,
-        Math.atan2(heading.x, -heading.z), controls.handbrake, vehicle.forwardSpeed < -0.5);
+        Math.atan2(heading.x, -heading.z), controls.handbrake, vehicle.forwardSpeed < -0.5, vehicle.engine);
     },
   }, { fixedHz: PHYSICS_HZ });
   loop.start();

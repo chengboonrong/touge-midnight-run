@@ -133,6 +133,44 @@ export interface VehicleTuning {
   steerSpeedRef: number;
   /** Lock angle multiplier at and above steerSpeedRef, 0..1. */
   highSpeedSteerScale: number;
+
+  // --- Powertrain ------------------------------------------------------------
+  // Arcade model: in gear the engine speed follows road speed (never below
+  // idle, as if the clutch slipped). There is no wheelspin. engineForce and
+  // reverseForce above stay the upper bounds on what the gearing may deliver,
+  // and topSpeed / reverseTopSpeed still fade the drive force to zero.
+  /** Peak crankshaft torque at full throttle, Nm. */
+  enginePeakTorque: number;
+  /** Engine power limit, W: torque is capped at power / angular speed. */
+  enginePeakPower: number;
+  /** Idle speed, rev/min. Also the lowest engine speed while in gear. */
+  engineIdleRpm: number;
+  /** Engine speed from which the full peak torque is available, rev/min. */
+  enginePeakTorqueRpm: number;
+  /** Rev limiter, rev/min: no drive torque at or above it. */
+  engineRedlineRpm: number;
+  /**
+   * Torque at idle as a fraction of the peak, 0..1. It rises linearly to 1 at
+   * enginePeakTorqueRpm. Keep it high enough for a responsive launch.
+   */
+  engineIdleTorqueFraction: number;
+  /** Time constant in s of free revving in neutral. 0 = instantly. */
+  engineRevTime: number;
+  /** Forward gear ratios, first gear first, each lower than the one before. */
+  gearRatios: readonly number[];
+  /** Reverse gear ratio. */
+  reverseGearRatio: number;
+  /** Final drive ratio, multiplies every gear ratio. */
+  finalDrive: number;
+  /** Engine speed at which the automatic gearbox shifts up, rev/min. */
+  upshiftRpm: number;
+  /**
+   * Engine speed at which it shifts down, rev/min. Keep it below upshiftRpm
+   * times the smallest ratio step, or the gearbox hunts between two gears.
+   */
+  downshiftRpm: number;
+  /** Torque interruption of one gear change, s. */
+  shiftTime: number;
 }
 
 export const VEHICLE: VehicleTuning = {
@@ -180,6 +218,21 @@ export const VEHICLE: VehicleTuning = {
   steerRate: 2.5,
   steerSpeedRef: 40,
   highSpeedSteerScale: 0.2,
+
+  // Powertrain values are tuning hypotheses until driven.
+  enginePeakTorque: 340,
+  enginePeakPower: 180000,
+  engineIdleRpm: 900,
+  enginePeakTorqueRpm: 3800,
+  engineRedlineRpm: 7200,
+  engineIdleTorqueFraction: 0.6,
+  engineRevTime: 0.25,
+  gearRatios: [3.2, 2.1, 1.5, 1.15, 0.92],
+  reverseGearRatio: 3.0,
+  finalDrive: 4.1,
+  upshiftRpm: 6500,
+  downshiftRpm: 3000,
+  shiftTime: 0.18,
 };
 
 /** Temporary follow camera in main.ts (replaced by a camera module later). */

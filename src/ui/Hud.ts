@@ -3,6 +3,9 @@ interface MapPoint { x: number; z: number }
 export class Hud {
   private readonly speed: HTMLElement;
   private readonly status: HTMLElement;
+  private readonly gear: HTMLElement;
+  private readonly rpm: HTMLElement;
+  private readonly rev: HTMLElement;
   private readonly root: HTMLElement;
   private readonly map: CanvasRenderingContext2D;
   private readonly routeColor: string;
@@ -32,9 +35,9 @@ export class Hud {
         <div><kbd>R</kbd><span>RESET</span></div>
       </div>
       <section class="speedometer" aria-label="Speed">
-        <span class="speedometer__status">NIGHT RUN</span>
+        <div class="speedometer__head"><span class="speedometer__gear" aria-label="Gear">N</span><span class="speedometer__rpm">RPM</span><span class="speedometer__status">NIGHT RUN</span></div>
         <div class="speedometer__value"><span class="speedometer__number">000</span><span class="speedometer__unit">KM/H</span></div>
-        <div class="speedometer__rule"></div>
+        <div class="speedometer__rule" role="meter" aria-label="Engine RPM" aria-valuemin="0"><span class="speedometer__rev"></span></div>
       </section>`;
     document.body.appendChild(this.root);
     const colors = getComputedStyle(this.root);
@@ -42,6 +45,9 @@ export class Hud {
     this.carColor = colors.getPropertyValue('--accent').trim();
     this.speed = this.root.querySelector('.speedometer__number')!;
     this.status = this.root.querySelector('.speedometer__status')!;
+    this.gear = this.root.querySelector('.speedometer__gear')!;
+    this.rpm = this.root.querySelector('.speedometer__rpm')!;
+    this.rev = this.root.querySelector('.speedometer__rev')!;
     this.root.querySelector('.route__length')!.textContent = `${(lengthMeters / 1000).toFixed(2)} KM`;
     const context = this.root.querySelector('canvas')!.getContext('2d');
     if (!context) throw Error('Cannot create route map');
@@ -55,13 +61,20 @@ export class Hud {
     this.offsetZ = 88 - ((minZ + maxZ) / 2) * this.scale;
   }
 
-  update(kmh: number, position: MapPoint, heading: number, handbrake: boolean, reverse: boolean): void {
+  update(kmh: number, position: MapPoint, heading: number, handbrake: boolean, reverse: boolean,
+    engine: { rpm: number; gear: number; redlineRpm: number; limiting: boolean }): void {
     const now = performance.now();
     if (now - this.lastUpdate < 80) return;
     this.lastUpdate = now;
     this.speed.textContent = Math.round(kmh).toString().padStart(3, '0');
     this.status.textContent = handbrake ? 'HANDBRAKE' : reverse ? 'REVERSE' : 'NIGHT RUN';
     this.root.classList.toggle('hud--braking', handbrake);
+    this.gear.textContent = engine.gear < 0 ? 'R' : engine.gear === 0 ? 'N' : String(engine.gear);
+    this.rpm.textContent = `${Math.round(engine.rpm)} RPM`;
+    this.rev.parentElement!.setAttribute('aria-valuenow', String(Math.round(engine.rpm)));
+    this.rev.parentElement!.setAttribute('aria-valuemax', String(engine.redlineRpm));
+    this.rev.style.transform = `scaleX(${Math.min(1, engine.rpm / engine.redlineRpm).toFixed(3)})`;
+    this.root.classList.toggle('hud--limit', engine.limiting);
     this.root.classList.toggle('hud--moving', kmh > 15);
     const ctx = this.map;
     ctx.clearRect(0, 0, 176, 176);
