@@ -228,3 +228,21 @@ proxy-decoded bodies without duplicate raw downloads; five loader tests pass.
 It buffers the compressed response before parsing (about4.9MB extra transient
 storage on the gzip path), trading a small loading-only allocation for robust
 proxy behavior. Browser compression negotiation still transfers4,874,419bytes.
+
+## Phase 5a — deterministic one-lap race core
+
+Files: RaceSession, race-session regression tests and integration contract doc.
+Actual spawn projection anchors three ordered quarter gates and the finish.
+Simulation-time countdown, directional interpolated split/finish times, valid
+best-lap data and invalid-record handling preserve free practice. Tests were
+applied first and failed for the missing module. All162 tests, typecheck and
+build pass. Sampled real-route laps agree with L/v across30/60/120Hz; this is
+not a full physics-car/autopilot lap. Test route loading uses its verified exact
+path, rather than recursively scanning unrelated files. UI/audio/storage and
+physical driving validation remain next.
+
+The initial larger proposal hit its30k output ceiling ($1.26; no implementation
+was applied). Its complete tests were reviewed, and a smaller module-only pass
+completed ($0.53). Cumulative$50.23, remaining$49.77 under the expanded$100 cap.
+The later presentation increment also addresses clearing stale queued events
+when a run is cancelled or restarted before the host drains them.
