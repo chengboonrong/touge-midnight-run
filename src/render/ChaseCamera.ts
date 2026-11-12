@@ -6,6 +6,11 @@ export type ChaseCameraTuning = Readonly<Record<keyof typeof CHASE_CAMERA, numbe
 /** Sideslip is measured against at least this forward speed, m/s. */
 const SLIP_MIN_SPEED = 5;
 
+/** Impact shake: peak vertical travel (m), decay (1/s) and oscillation rate (rad/s). */
+const SHAKE_MAX = 0.07;
+const SHAKE_DECAY = 14;
+const SHAKE_RATE = 55;
+
 const clamp = (value: number, limit: number): number => Math.max(-limit, Math.min(limit, value));
 
 /**
@@ -26,6 +31,8 @@ export class ChaseCamera {
   private previousX = 0;
   private previousZ = 0;
   private fresh = true;
+  private shake = 0;
+  private shakeTime = 0;
 
   constructor(camera: PerspectiveCamera, tuning: ChaseCameraTuning) {
     this.camera = camera;
@@ -35,6 +42,14 @@ export class ChaseCamera {
   /** Horizontal unit direction the camera treats as the car's forward. */
   get forward(): { readonly x: number; readonly z: number } {
     return this.heading;
+  }
+
+  /** Starts a short decaying vertical shake for a real collision; strength is clamped to 0..1. */
+  impact(strength: number): void {
+    const s = Math.min(1, Math.max(0, strength));
+    if (!(s > 0)) return;
+    this.shake = Math.max(this.shake * Math.exp(-SHAKE_DECAY * this.shakeTime), s);
+    this.shakeTime = 0;
   }
 
   /**
@@ -70,6 +85,7 @@ export class ChaseCamera {
       this.accelShift = 0;
       this.cornerShift = 0;
       this.roll = 0;
+      this.shake = 0;
       this.fov = fovTarget;
     } else {
       const keep = Math.exp(-t.effectResponse * Math.max(dt, 0));
@@ -97,6 +113,13 @@ export class ChaseCamera {
     s.copy(car.position).addScaledVector(h, t.lookAhead);
     s.y += t.lookHeight;
     camera.lookAt(s);
+    if (this.shake > 0) {
+      // Closed form in elapsed time, so the motion is the same at any frame rate.
+      this.shakeTime += Math.max(dt, 0);
+      const amplitude = this.shake * Math.exp(-SHAKE_DECAY * this.shakeTime);
+      if (amplitude < 0.01) this.shake = 0;
+      else camera.position.y += SHAKE_MAX * amplitude * Math.sin(SHAKE_RATE * this.shakeTime);
+    }
     camera.rotateZ(this.roll);
     if (reset || Math.abs(camera.fov - this.fov) > 1e-3) {
       camera.fov = this.fov;

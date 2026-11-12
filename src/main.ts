@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { CHASE_CAMERA, PHYSICS_HZ, VEHICLE } from './config';
+import { CHASE_CAMERA, FIXED_DT, PHYSICS_HZ, VEHICLE } from './config';
 import { GameLoop } from './core/GameLoop';
 import { Input } from './core/Input';
 import { Car } from './entities/Car';
+import { ImpactFeedback, impactThresholdForce } from './physics/ImpactFeedback';
 import { PhysicsWorld } from './physics/PhysicsWorld';
 import { RaycastVehicle, type VehicleInput } from './physics/RaycastVehicle';
 import { ChaseCamera } from './render/ChaseCamera';
@@ -46,6 +47,23 @@ async function bootstrap(): Promise<void> {
   addPassColliders(pass.scene, physics.world);
   const vehicle = new RaycastVehicle(RAPIER, physics.world, VEHICLE);
   const car = new Car(vehicle, coupe.scene);
+  // Collision feedback: contact-force events on the chassis collider only, drained every fixed step.
+  const vehicleCollider = vehicle.collider;
+  vehicleCollider.setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS);
+  vehicleCollider.setContactForceEventThreshold(impactThresholdForce(VEHICLE.mass, FIXED_DT));
+  const vehicleHandle = vehicleCollider.handle;
+  const impacts = new ImpactFeedback();
+  let contactEvents: RAPIER.EventQueue | null = new RAPIER.EventQueue(true);
+  const onContactForce = (event: RAPIER.TempContactForceEvent): void => {
+    impacts.contact(event.collider1(), event.collider2(), vehicleHandle, event.totalForceMagnitude(), FIXED_DT, VEHICLE.mass);
+  };
+  window.addEventListener('pagehide', event => {
+    // A page kept in the back/forward cache keeps its queue; only a real unload frees the WASM memory.
+    if (event.persisted) return;
+    contactEvents?.free();
+    contactEvents = null;
+  });
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   scene.add(car.root);
 
   for (const x of [-0.54, 0.54]) {
@@ -99,15 +117,25 @@ async function bootstrap(): Promise<void> {
       controls.brake = input.isHeld('KeyS') ? 1 : 0;
       controls.steer = Number(input.isHeld('KeyD')) - Number(input.isHeld('KeyA'));
       controls.handbrake = input.isHeld('Space');
-      if (input.consumeReset()) { car.reset(); snapCamera = true; }
+      if (input.consumeReset()) { car.reset(); snapCamera = true; impacts.reset(); }
       car.savePreviousPose();
       vehicle.update(controls, dt);
-      physics.step();
+      impacts.step(dt);
+      const queue = contactEvents;
+      if (queue) {
+        physics.step(queue);
+        queue.drainContactForceEvents(onContactForce);
+      } else physics.step();
       car.readPhysicsPose();
     },
     render: (alpha, frameDt) => {
       car.render(alpha);
       const velocity = vehicle.body.linvel();
+      const impact = impacts.consume();
+      if (impact > 0) {
+        if (!reducedMotion.matches) chase.impact(impact);
+        audio.impact(impact);
+      }
       chase.update(car.root, velocity, vehicle.body.angvel().y, frameDt, snapCamera);
       snapCamera = false;
       const braking = controls.brake > 0 || controls.handbrake;

@@ -28,7 +28,8 @@ export class PhysicsWorld {
   }
 
   /** Advances the simulation by exactly one fixed timestep. */
-  step(): void {
-    this.world.step();
+  step(events?: RAPIER.EventQueue): void {
+    if (events) this.world.step(events);
+    else this.world.step();
   }
 }

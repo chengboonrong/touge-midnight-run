@@ -125,10 +125,46 @@ actual gear/handbrake edges remain unthrottled. No per-frame node allocation.
 Tests applied first failed for missing helper. Then119 game tests, typecheck and
 build pass. Real browser Escape-first -> W produced a running context,33km/h
 and nonzero RMS. Graph node counts remain fixed. Mute reaches RMS=0 and survives
-reload. Volume slider works with keyboard and is saved. Hidden/menu states
-suspend and unpause resumes. Human mix/pitch smoothness and physical-phone
+reload. Volume slider works with keyboard and is saved. Menu states
+suspend and unpause resumes. Hidden-tab handling is implemented but still
+needs a physical tab-switch check; this browser harness keeps test pages visible. Human mix/pitch smoothness and physical-phone
 activation remain manual validation. No long-duration heap-leak claim.
 
 API$0.83; cumulative$45.13; remaining$4.87. Remaining funds go to actual contact
 feedback and final regression/performance review. Music, race events, smoke and
 skids are still pending, rather than represented by dummy UI.
+
+## Budget authorization update
+
+The user added$50 to the spending limit on2026-11-13. The cumulative limit is
+now$100 (not a reset). `.env` MAX_SPEND_USD=100 was saved and loadConfig verified
+model claude-fable-5-2, limit100, default max output128000. Ledger history remains
+intact. At authorization: estimated$45.127456, remaining$54.872544, one contact-
+feedback proposal already in flight under its earlier$50 guard. Future feature
+calls use$95 until final validation, preserving$5 of the expanded budget.
+
+## Phase 3c — real chassis impact feedback
+
+Files: ImpactFeedback, PhysicsWorld optional event queue, main, GameAudio,
+ChaseCamera and three test files. Rapier0.14 contact forces on the chassis
+produce a filtered thump and <0.07m decaying camera movement; reduced-motion
+preference disables new shake. One owned queue is drained each physics step;
+only numeric event data escape the callback. No force or handling changes.
+Reset clears feedback and bfcache retains its queue. No guardrail scrape claim.
+
+The host strengthened a render-rate test from strong-then-weak to weak-then-
+strong and caught render-dependent cooldown eligibility. Eligibility is now
+fixed-step based, with strongest simultaneous contact retained. A real Rapier
+wall/drop/rest integration test caught a too-sensitive0.5m/s threshold: a tiny
+settling drop triggered it. Raising it to1.5m/s avoids that false hit and gives
+full strength for the15m/s wall test (1.07MN contact) and5m drop (0.71MN). Rest
+produces no feedback. Quiet bumps are deliberately below threshold. Force rating
+is an approximation and the first accepted collision step sets the burst;
+spreading an impact over several steps can understate its strength.
+
+All134 tests, typecheck and build pass. New camera tests cover bounds, decay,
+reset and refresh independence. Hard-landing/wall event delivery is verified
+against actual WASM; subjective shake/sound and bfcache remain manual checks.
+API$0.87; cumulative$46.00; remaining$54.00 under the expanded$100 ceiling.
+Next: original generated playable synth music and four-state manager, followed
+by an actual race loop/HUD, bounded visual effects and final profiling.

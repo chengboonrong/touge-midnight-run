@@ -209,6 +209,14 @@ export class GameAudio {
     else if (handEdge) this.thump(g, t, handbrake ? 700 : 400, handbrake ? 0.3 : 0.12);
   }
 
+  /** A low thump for a real collision, strength 0..1. Reuses the fx path; silent while locked, paused, hidden or muted. */
+  impact(strength: number): void {
+    const g = this.graph;
+    const s = Math.min(1, Math.max(0, strength));
+    if (!g || !(s > 0) || this.paused || this.page.visibilityState !== 'visible' || g.ctx.state !== 'running') return;
+    this.thump(g, g.ctx.currentTime, 140, 0.35 + 0.55 * s, 0.07);
+  }
+
   /** Removes every listener, stops and disconnects the graph and closes the context. */
   dispose(): void {
     if (this.disposed) return;
@@ -241,11 +249,11 @@ export class GameAudio {
   }
 
   /** A short filtered noise burst on the preallocated fx path. */
-  private thump(g: Graph, t: number, frequency: number, level: number): void {
+  private thump(g: Graph, t: number, frequency: number, level: number, decay = 0.035): void {
     g.fxFilter.frequency.setValueAtTime(frequency, t);
     g.fxGain.gain.cancelScheduledValues(t);
     g.fxGain.gain.setTargetAtTime(level, t, 0.004);
-    g.fxGain.gain.setTargetAtTime(0, t + 0.03, 0.035);
+    g.fxGain.gain.setTargetAtTime(0, t + 0.03, decay);
   }
 
   private save(): void {
