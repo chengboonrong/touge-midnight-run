@@ -204,3 +204,18 @@ API$1.54; cumulative$47.54, remaining$52.46. A focused follow-up is validating
 slow incoming loads and stale play promises before race integration. Track
 listening, mix judgment, actual iOS activation and loop-seam comfort remain
 manual checks. The existing Vite large-bundle warning remains.
+
+## Phase 4b — music transition lifecycle fixes
+
+MusicManager and its pure planner plus six focused deferred-play regressions.
+Five were red before the fix. A pending incoming stream now leaves the previous
+track audible until play settles; stale play successes/refusals cannot override
+newer state, pause or mute. An idle loading slot is reused for a third request
+without replacing the audible slot. Returning to an earlier still-playing track
+is safe. Constructor cleanup and both-slot mute/unmute have regression coverage.
+All148 tests, typecheck and build pass. Real slow-network buffering, rapid
+transition listening and physical iOS remain manual checks; no extra graph nodes
+or contexts were introduced. An interrupted outgoing crossfade tail can still
+be cut by a rapid third request (bounded two-slot tradeoff).
+API$0.90; cumulative$48.44, remaining$51.56. Next: fixed-step timed-lap logic,
+then its countdown/cues/checkpoints/PB HUD. No new race UI is claimed yet.

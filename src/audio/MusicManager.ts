@@ -18,25 +18,34 @@ export class MusicManager {
   private level: number;
   private active = false;
   private blocked = false;
+  /** Slot audible now, or -1. An incoming slot becomes live only when its play() settles. */
+  private live = -1;
+  /** Bumped by every play attempt and halt, so late play promises and delayed stops are ignored. */
+  private gen = 0;
   private disposed = false;
 
   constructor(ctx: AudioContext, bus: AudioNode, state: MusicState, level: number) {
     this.ctx = ctx;
     this.state = state;
     this.level = level;
-    try { for (let i = 0; i < 2; i++) {
-      const el = new Audio();
-      this.els.push(el);
-      el.loop = true;
-      el.preload = 'none';
-      const source = ctx.createMediaElementSource(el);
-      this.sources.push(source);
-      const gain = ctx.createGain();
-      this.gains.push(gain);
-      gain.gain.value = 0;
-      source.connect(gain);
-      gain.connect(bus);
-    } } catch (error) { this.dispose(); throw error; }
+    try {
+      for (let i = 0; i < 2; i++) {
+        const el = new Audio();
+        this.els.push(el);
+        el.loop = true;
+        el.preload = 'none';
+        const source = ctx.createMediaElementSource(el);
+        this.sources.push(source);
+        const gain = ctx.createGain();
+        this.gains.push(gain);
+        gain.gain.value = 0;
+        source.connect(gain);
+        gain.connect(bus);
+      }
+    } catch (error) {
+      this.dispose();
+      throw error;
+    }
   }
 
   /** Remembers the wanted track; crossfades at once only while active. */
@@ -56,8 +65,7 @@ export class MusicManager {
       }
       return;
     }
-    const current = this.planner.current();
-    const param = current ? this.gains[current.slot]?.gain : undefined;
+    const param = this.gains[this.live]?.gain;
     if (!this.active || this.disposed || !param) return;
     const t = this.ctx.currentTime;
     param.cancelScheduledValues(t);
@@ -75,10 +83,8 @@ export class MusicManager {
     }
     this.active = active;
     if (!active) { this.halt(); return; }
-    if (current && current.state === this.state) {
-      this.fade(current.slot, this.level);
-      this.play(current.slot);
-    } else this.start();
+    if (current && current.state === this.state) this.play(current.slot);
+    else this.start();
   }
 
   dispose(): void {
@@ -95,34 +101,45 @@ export class MusicManager {
   }
 
   private start(): void {
-    const change = this.planner.request(this.state);
+    const change = this.planner.request(this.state, this.live);
     if (!change) return;
     const el = this.els[change.fadeIn];
     if (!el) return;
     if (!change.reuse) el.src = MUSIC_TRACKS[change.state];
-    this.fade(change.fadeIn, this.level);
+    // The old track stays audible until the incoming one really starts.
     this.play(change.fadeIn);
+  }
+
+  /** The slot's play() settled for the latest attempt: crossfade now, stop the other slot afterwards. */
+  private arrive(slot: number, gen: number): void {
+    this.blocked = false;
+    this.live = slot;
+    this.fade(slot, this.level);
+    this.fade(1 - slot, 0);
     this.clearTimer();
-    const out = change.fadeOut;
-    if (out < 0) return;
-    this.fade(out, 0);
     this.timer = setTimeout(() => {
       this.timer = null;
-      if (this.planner.shouldStop(out, change.token)) this.els[out]?.pause();
+      if (gen === this.gen) this.els[1 - slot]?.pause();
     }, CROSSFADE_SECONDS * 1000 + 100);
   }
 
   private play(slot: number): void {
     const el = this.els[slot];
     if (!el) return;
+    const gen = ++this.gen;
+    const fresh = (): boolean => gen === this.gen && this.active && !this.disposed;
     try {
       const started = el.play();
       if (started) {
         started.then(
-          () => { this.blocked = false; if (this.disposed || !this.active) el.pause(); },
-          (error: unknown) => { this.blocked = (error as { name?: string } | null)?.name === 'NotAllowedError'; },
+          () => {
+            if (fresh()) this.arrive(slot, gen);
+            // Stale: never leave a slot playing that is neither audible nor the wanted one.
+            else if (this.disposed || !this.active || (slot !== this.live && slot !== this.planner.current()?.slot)) el.pause();
+          },
+          (error: unknown) => { if (fresh()) this.blocked = (error as { name?: string } | null)?.name === 'NotAllowedError'; },
         );
-      }
+      } else this.arrive(slot, gen);
     } catch {
       // No playback support: stay silent.
     }
@@ -139,6 +156,8 @@ export class MusicManager {
 
   private halt(): void {
     this.clearTimer();
+    this.gen++;
+    this.live = -1;
     this.planner.cancel();
     const t = this.ctx.currentTime;
     for (const gain of this.gains) {

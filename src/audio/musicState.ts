@@ -63,10 +63,12 @@ export class MusicPlanner {
   private token = 0;
 
   /** Null when the state is already the active one. */
-  request(state: MusicState): MusicChange | null {
+  request(state: MusicState, live: number = this.active): MusicChange | null {
     if (this.active >= 0 && this.slots[this.active] === state) return null;
-    const fadeOut = this.active;
-    const fadeIn = fadeOut === 0 ? 1 : 0;
+    // live = the slot audible now (-1 for none). It is never overwritten: the new track loads into the other
+    // slot, or the live slot is reused when it already holds the track.
+    const fadeIn = live < 0 ? 0 : this.slots[live] === state ? live : 1 - live;
+    const fadeOut = live < 0 ? -1 : 1 - fadeIn;
     const reuse = this.slots[fadeIn] === state;
     this.slots[fadeIn] = state;
     this.active = fadeIn;
