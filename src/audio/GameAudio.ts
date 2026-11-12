@@ -12,6 +12,8 @@ import { AutomationThrottle, ContextGate, targetChanged } from './audioState';
 import { MusicManager } from './MusicManager';
 import { DEFAULT_MUSIC_STATE, musicLevel, parseMusicState, parseMusicVolume, parseMusicVolumePref } from './musicState';
 import type { MusicState } from './musicState';
+import { CUE_ATTACK, CUE_RELEASE, RACE_CUES } from './raceCue';
+import type { RaceCueKind } from './raceCue';
 
 const STORAGE_KEY = 'touge.audio';
 /** Idle, low, mid, high layers: pitch multiple of the firing frequency, waveform, level. */
@@ -36,6 +38,9 @@ interface Graph {
   windGain: GainNode;
   fxGain: GainNode;
   fxFilter: BiquadFilterNode;
+  /** One preallocated voice for race cues. */
+  cueOsc: OscillatorNode;
+  cueGain: GainNode;
   sources: AudioScheduledSourceNode[];
   nodes: AudioNode[];
 }
@@ -112,8 +117,15 @@ function buildGraph(ctx: AudioContext): Graph {
   const fxGain = gain(master);
   const fxFilter = filter('lowpass', 300, 0.7, fxGain);
   noise(fxFilter, 1.5);
+  const cueGain = gain(master);
+  const cueOsc = ctx.createOscillator();
+  cueOsc.type = 'triangle';
+  cueOsc.connect(cueGain);
+  cueOsc.start();
+  nodes.push(cueOsc);
+  sources.push(cueOsc);
 
-  return { ctx, bus: compressor, master, engineGain, engineFilter, oscillators, layerGains, tireGain, tireFilter, roadGain, windGain, fxGain, fxFilter, sources, nodes };
+  return { ctx, bus: compressor, master, engineGain, engineFilter, oscillators, layerGains, tireGain, tireFilter, roadGain, windGain, fxGain, fxFilter, cueOsc, cueGain, sources, nodes };
 }
 
 /** volume = SFX, muted = mute all (older SFX-only data keeps its values), musicVolume = music. */
@@ -241,6 +253,30 @@ export class GameAudio {
     this.thump(g, g.ctx.currentTime, 140, 0.35 + 0.55 * s, 0.07);
   }
 
+  /** A short race tone sequence on the preallocated cue voice, replacing any earlier cue. Event-driven; silent while locked, paused, hidden or muted. */
+  raceCue(kind: RaceCueKind): void {
+    const g = this.graph;
+    if (!g || this.paused || this.page.visibilityState !== 'visible' || g.ctx.state !== 'running' || !(masterLevel(this.prefs) > 0)) return;
+    const now = g.ctx.currentTime;
+    const gain = g.cueGain.gain;
+    this.clearCue(g, now);
+    for (const [at, hz, hold, level] of RACE_CUES[kind]) {
+      const t = now + 0.01 + at;
+      g.cueOsc.frequency.setValueAtTime(hz, t);
+      gain.setValueAtTime(0, t);
+      gain.linearRampToValueAtTime(level, t + CUE_ATTACK);
+      gain.setValueAtTime(level, t + hold);
+      gain.linearRampToValueAtTime(0, t + hold + CUE_RELEASE);
+    }
+  }
+
+  /** Drops scheduled cue tones and silences the cue voice. */
+  private clearCue(g: Graph, t: number): void {
+    g.cueOsc.frequency.cancelScheduledValues(t);
+    g.cueGain.gain.cancelScheduledValues(t);
+    g.cueGain.gain.setValueAtTime(0, t);
+  }
+
   /** Removes every listener, stops and disconnects the graph and closes the context. */
   dispose(): void {
     if (this.disposed) return;
@@ -341,7 +377,7 @@ export class GameAudio {
     const now = ctx.currentTime;
     g.master.gain.cancelScheduledValues(now);
     if (want) g.master.gain.setTargetAtTime(masterLevel(this.prefs), now, 0.04);
-    else g.master.gain.setValueAtTime(0, now);
+    else { g.master.gain.setValueAtTime(0, now); this.clearCue(g, now); }
     this.gate?.sync(want, gesture);
     this.music?.setLevel(musicLevel(this.prefs.musicVolume, this.prefs.muted));
     this.music?.setActive(want);

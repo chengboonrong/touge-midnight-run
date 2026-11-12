@@ -125,3 +125,31 @@ body[data-touch] .speedometer { bottom: calc(var(--touch-edge) + 132px); }
   .options { top: 64px; left: max(20px, env(safe-area-inset-left)); }
   .options[open] { padding: 64px 20px 20px max(20px, env(safe-area-inset-left)); }
 }
+/* Race layer: timing lines under Options on the left, countdown and notices in the centre. Never takes input. */
+.race-hud { position: fixed; inset: 0; z-index: 2; pointer-events: none; text-shadow: 0 2px 10px var(--text-shadow); }
+.race-panel { position: absolute; top: 144px; left: max(38px, env(safe-area-inset-left)); display: grid; gap: 4px; max-width: 150px;
+  overflow: hidden; white-space: nowrap; font-size: 8px; letter-spacing: .12em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.race-panel span:empty { display: none; }
+.race-panel__title { color: var(--paper); }
+.race-panel__time { font: 400 30px/1 var(--font-number); letter-spacing: 0; font-variant-numeric: tabular-nums; color: var(--paper); }
+.race-panel__sectors { display: flex; gap: 4px; }
+.race-panel__sectors i { width: 22px; height: 3px; background: var(--rule); transition: background-color .2s; }
+.race-hud[data-passed="1"] i:nth-child(1), .race-hud[data-passed="2"] i:nth-child(-n+2), .race-hud[data-passed="3"] i { background: var(--paper); }
+.race-hud[data-state=practice] .race-panel__sectors { display: none; }
+.race-panel__split { color: var(--paper); }
+.race-panel__split[data-sign=behind], .race-hud[data-drift="1"] .race-panel__drift { color: var(--accent); }
+.race-count { position: absolute; top: 30%; left: 0; right: 0; text-align: center; font: 300 90px/1 var(--font-number); font-variant-numeric: tabular-nums; }
+.race-notice { position: absolute; top: calc(30% + 98px); left: 0; right: 0; text-align: center; font-size: 10px; line-height: 1.5; letter-spacing: .2em; }
+@media (max-width: 680px) {
+  .race-panel { top: 128px; left: max(20px, env(safe-area-inset-left)); }
+}
+@media (max-height: 480px) {
+  .race-count { top: 36%; font-size: 56px; }
+  .race-notice { top: calc(36% + 62px); }
+}
+/* Narrow portrait: the countdown sits between the panel text and the speed; notices go under the panel. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .race-count { top: 176px; font-size: 56px; }
+  .race-notice { top: 230px; left: max(20px, env(safe-area-inset-left)); right: auto; max-width: 150px; text-align: left; }
+}
+@media (prefers-reduced-motion: reduce) { .race-panel__sectors i { transition: none; } }

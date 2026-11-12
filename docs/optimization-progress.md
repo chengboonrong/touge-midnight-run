@@ -246,3 +246,23 @@ was applied). Its complete tests were reviewed, and a smaller module-only pass
 completed ($0.53). Cumulative$50.23, remaining$49.77 under the expanded$100 cap.
 The later presentation increment also addresses clearing stale queued events
 when a run is cancelled or restarted before the host drains them.
+
+## Phase 5b — drift score, race HUD and cue modules
+
+Files: DriftScore, RaceHud, RaceSession stale-event fix, raceCue, GameAudio,
+styles and four new regression files. Score integrates actual chassis velocity,
+loaded wheel count and real rear slip, with minimum speed/forward motion and a
+13–60degree window. Airborne/reverse/spins/rest cannot score. A0.4s grace links
+switchbacks; stop banks once and reset clears. UI formatting and capped cues
+are deterministic. One owned extra oscillator/gain handles event cues, cleared
+on pause/hidden, with no per-cue nodes/timers. Countdown is also aria-live.
+
+Tests were applied first and failed for missing modules/stale queued events.
+All172 tests, typecheck and build pass. Host converted the proposed TS tests
+into the repository's real .mjs/transpile loader and retained all assertions.
+RaceHud, markers and drift are not wired into the live main loop yet; their
+actual behavior/layout/audio are the next integration check, not claimed here.
+RaceMarkers is a small host-written visual-only gate/board class with shared
+geometry, explicit disposal and no shadows; typechecked pending visual review.
+API$1.25; cumulative$51.48, remaining$48.52. Main wiring and saved records are
+being added next; no driving forces or existing controls were changed.

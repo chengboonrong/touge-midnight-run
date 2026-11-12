@@ -222,6 +222,7 @@ export class RaceSession {
   }
 
   private reset(state: RaceState, position: RacePoint): void {
+    this.events.length = 0; // Undrained events of the dropped run must not reach the HUD or audio.
     this._state = state;
     this._splits = [];
     this._elapsed = 0;
