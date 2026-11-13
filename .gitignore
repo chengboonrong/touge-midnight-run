@@ -1,6 +1,9 @@
 node_modules/
 dist/
 .agent-ledger.json*
+.env
+.env.*
+*.key
 *.blend1
 *.blend2
 __pycache__/
