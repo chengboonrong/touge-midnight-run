@@ -40,7 +40,7 @@ function harness() {
   const input = new Input(view);
   const touch = new TouchControls(input, page, view);
   const root = page.body.children[0];
-  const button = (label) => root.children.find((child) => child.textContent === label);
+  const button = (label) => root.children.find((child) => child.getAttribute('aria-label') === label);
   const pointer = (label, type, pointerId, mouseButton = 0) => {
     const event = Object.assign(new Event(type, { cancelable: true }), { pointerId, button: mouseButton });
     button(label).dispatchEvent(event);
@@ -58,7 +58,7 @@ function harness() {
     held: () => HELD_CODES.filter((code) => input.isHeld(code)),
     pressed: () => root.children
       .filter((child) => child.getAttribute('aria-pressed') === 'true')
-      .map((child) => child.textContent),
+      .map((child) => child.getAttribute('aria-label')),
   };
 }
 
@@ -117,11 +117,15 @@ test('renders six named, unpressed buttons inside a labelled group', () => {
   assert.equal(h.root.getAttribute('role'), 'group');
   assert.ok(h.root.getAttribute('aria-label'));
   assert.deepEqual(
-    h.root.children.map((child) => child.textContent).sort(),
+    // The fake DOM does not parse innerHTML, so the icon sprite is not a child here; a real DOM adds it first.
+    h.root.children.filter((child) => child.type === 'button').map((child) => child.getAttribute('aria-label')).sort(),
     ['BRAKE', 'GAS', 'HANDBRAKE', 'LEFT', 'RESET', 'RIGHT'],
   );
   for (const child of h.root.children) {
     assert.equal(child.type, 'button');
+    const area = child.className.split('--')[1];
+    assert.match(child.innerHTML, new RegExp(`<use href="#t-${area}"/>`), 'each button draws its own icon');
+    assert.match(h.root.innerHTML, new RegExp(`<symbol id="t-${area}"`), 'from the shared sprite');
     assert.equal(child.getAttribute('aria-pressed'), 'false');
   }
   assert.deepEqual(h.held(), []);

@@ -18,15 +18,24 @@ interface Hold {
   readonly pointers: Set<number>;
 }
 
-/** Layout area (see styles.css), visible label and accessible name, action. */
-const BUTTONS: ReadonlyArray<readonly [area: string, label: string, code: HeldCode | null]> = [
-  ['reset', 'RESET', null],
-  ['hand', 'HANDBRAKE', 'Space'],
-  ['left', 'LEFT', 'KeyA'],
-  ['right', 'RIGHT', 'KeyD'],
-  ['brake', 'BRAKE', 'KeyS'],
-  ['gas', 'GAS', 'KeyW'],
+/** Layout area and icon id (see styles.css), accessible name, short visible caption, action. */
+const BUTTONS: ReadonlyArray<readonly [area: string, label: string, caption: string, code: HeldCode | null]> = [
+  ['reset', 'RESET', '', null],
+  ['hand', 'HANDBRAKE', 'HAND', 'Space'],
+  ['left', 'LEFT', '', 'KeyA'],
+  ['right', 'RIGHT', '', 'KeyD'],
+  ['brake', 'BRAKE', 'BRAKE', 'KeyS'],
+  ['gas', 'GAS', 'GAS', 'KeyW'],
 ];
+/** One icon set: 24-unit grid, 2px square-capped strokes, no fills, drawn in currentColor. */
+const ICONS = '<svg class="touch__sprite" aria-hidden="true"><defs>'
+  + '<symbol id="t-left" viewBox="0 0 24 24"><path d="M15 4 7 12l8 8"/></symbol>'
+  + '<symbol id="t-right" viewBox="0 0 24 24"><path d="m9 4 8 8-8 8"/></symbol>'
+  + '<symbol id="t-gas" viewBox="0 0 24 24"><path d="M7 2h10v20H7zM10 7h4m-4 4h4m-4 4h4"/></symbol>'
+  + '<symbol id="t-brake" viewBox="0 0 24 24"><path d="M3 7h18v10H3zm5 3v4m4-4v4m4-4v4"/></symbol>'
+  + '<symbol id="t-hand" viewBox="0 0 24 24"><path d="M3 21h9M6 21 18 5m-3-2 6 4"/></symbol>'
+  + '<symbol id="t-reset" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 3v6h-6"/></symbol>'
+  + '</defs></svg>';
 const RELEASE_EVENTS = ['pointerup', 'pointercancel', 'lostpointercapture'] as const;
 
 export class TouchControls {
@@ -44,11 +53,13 @@ export class TouchControls {
     this.root.className = 'touch';
     this.root.setAttribute('role', 'group');
     this.root.setAttribute('aria-label', 'Touch controls');
-    for (const [area, label, code] of BUTTONS) {
+    this.root.innerHTML = ICONS;
+    for (const [area, label, caption, code] of BUTTONS) {
       const button = page.createElement('button');
       button.type = 'button';
       button.className = `touch__button touch__button--${area}`;
-      button.textContent = label;
+      button.innerHTML = `<svg aria-hidden="true"><use href="#t-${area}"/></svg>${caption ? `<span>${caption}</span>` : ''}`;
+      button.setAttribute('aria-label', label);
       button.setAttribute('aria-pressed', 'false');
       button.addEventListener('pointerdown', this.onDown);
       for (const type of RELEASE_EVENTS) button.addEventListener(type, this.onRelease);
